@@ -7,7 +7,7 @@ switch themes.
 
 The layout is miller columns (parent · current · preview) with vim keys, in the shape of
 [yazi](https://github.com/sxyazi/yazi), but it's a real window rather than a terminal UI —
-so previews render actual images, and it opens as its own app.
+so previews render actual images, video frames and pdf pages, and it opens as its own app.
 
 Built with **PySide6 + QML**: Python walks the filesystem and handles file operations, QML
 draws the panes. The glass look comes from a translucent window plus Hyprland's blur.
@@ -18,6 +18,10 @@ draws the panes. The glass look comes from a translucent window plus Hyprland's 
 pip install -r requirements.txt      # or: pacman -S pyside6
 ./mica.sh                            # focuses an existing window, else launches
 ```
+
+Video, PDF and audio-art previews shell out to `ffmpeg` and `poppler` (`pdftoppm`)
+when they're installed; without them those files just show a summary card. Thumbnails
+are cached under `~/.cache/mica/thumbnails`.
 
 Bind it to a key and give it a launcher entry:
 

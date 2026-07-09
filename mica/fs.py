@@ -8,6 +8,8 @@ from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
+from .thumbs import Thumbnailer
+
 _PREVIEW_BYTES = 64 * 1024
 
 _IMAGE = {"png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", "ico", "tiff", "avif", "heic"}
@@ -143,9 +145,12 @@ class Fs(QObject):
     flagsChanged = Signal()    # hidden or sort
     clipChanged = Signal()
     notify = Signal(str, bool)  # message, isError
+    thumbReady = Signal(str, str)  # source path, thumbnail path
 
     def __init__(self, start: Path, parent=None):
         super().__init__(parent)
+        self._thumbs = Thumbnailer(self)
+        self._thumbs.ready.connect(self.thumbReady)
         self._cwd = start
         self._show_hidden = False
         self._sort = "name"
@@ -299,6 +304,12 @@ class Fs(QObject):
         kind = _kind(p, False, p.is_symlink(), False)
         if kind == "image":
             return {"type": "image", "path": str(p)}
+        ext = p.suffix.lower()
+        if kind in ("video", "audio") or ext == ".pdf":
+            thumb = self._thumbs.get(p, "pdf" if ext == ".pdf" else kind)
+            if thumb:
+                return {"type": "image", "path": thumb}
+            # fall through to the info card while the thumbnail renders
         try:
             st = p.stat()
         except OSError:

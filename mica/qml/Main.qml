@@ -95,6 +95,10 @@ ApplicationWindow {
             win.cursor = Math.min(fs.focusIndex, Math.max(0, win.filteredEntries.length - 1))
             win.refreshPreview()
         }
+        function onThumbReady(src, thumb) {
+            var e = win.curEntry()
+            if (e && e.path === src) win.refreshPreview()
+        }
     }
     Component.onCompleted: { refreshPreview(); keys.forceActiveFocus() }
 
