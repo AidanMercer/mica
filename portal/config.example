@@ -1,0 +1,9 @@
+# Reference only — portal/setup.sh generates the real file at
+#   ~/.config/xdg-desktop-portal-termfilechooser/config
+# with `cmd` pointed at the absolute path of mica-filechooser.sh.
+[filechooser]
+cmd=/path/to/mica/portal/mica-filechooser.sh
+default_dir=$HOME
+create_help_file=0
+open_mode=suggested
+save_mode=suggested

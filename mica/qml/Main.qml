@@ -10,7 +10,9 @@ ApplicationWindow {
     minimumWidth: 820
     minimumHeight: 480
     color: "transparent"
-    title: "mica"
+    // distinct title in pick mode so a window rule can float it like a dialog
+    title: win.picking ? "mica-picker" : "mica"
+    onClosing: function (ev) { if (win.picking) picker.cancel() }
 
     // QML owns the cursor within the current pane; fs owns cwd + listings.
     property int cursor: 0
@@ -24,6 +26,20 @@ ApplicationWindow {
     property string bookmarkTarget: ""     // dir being bookmarked while in bookmark_add
     property string pendingBookmark: ""    // key awaiting an unbookmark confirm
     property var previewData: ({ "type": "empty" })
+
+    // --- file-picker mode (mica --pick, driven by the desktop portal) -------
+    // `picker` is a context property: a Picker object in pick mode, else null.
+    readonly property bool picking: picker !== null
+    readonly property bool pickSave: picking && picker.save
+    readonly property bool pickDir: picking && picker.directory
+    readonly property bool pickMulti: picking && picker.multiple
+    readonly property string pickHint: {
+        if (!picking) return ""
+        if (pickSave) return "SAVE  ·  l/→ open folder  ·  w name a file  ·  enter overwrite hovered  ·  esc cancel"
+        if (pickDir) return "PICK FOLDER  ·  enter select  ·  l/→ open  ·  esc cancel"
+        if (pickMulti) return "PICK FILES  ·  space mark  ·  enter confirm  ·  esc cancel"
+        return "PICK FILE  ·  enter/→ select  ·  esc cancel"
+    }
 
     readonly property string bookmarkTargetDisplay: {
         var p = win.bookmarkTarget, h = fs.homePath
@@ -75,9 +91,14 @@ ApplicationWindow {
         if (e && mode !== "search") fs.remember(e.name)
         refreshPreview()
     }
-    function enterItem() {
+    // confirm = true for enter/double-click (the "select" gesture), false for l/→ (browse)
+    function enterItem(confirm) {
         var e = curEntry()
-        if (!e) return
+        if (!e) {
+            if (confirm && win.pickDir) picker.chooseOne(fs.cwd)      // pick the empty dir
+            else if (confirm && win.pickSave) win.beginSaveName("")   // name a file here
+            return
+        }
         if (finding) {                    // a hit: reveal the file, or step into the folder
             if (win.mode === "grep") fs.grep("")   // stop the rg process
             win.mode = "normal"
@@ -86,8 +107,31 @@ ApplicationWindow {
             else fs.jumpTo(e.path)
             return
         }
+        if (win.picking) { win.pickAt(e, confirm); return }
         if (e.isDir) { win.filter = ""; fs.enter(e.path) }
         else fs.openPath(e.path)
+    }
+    function pickAt(e, confirm) {
+        if (win.pickSave) {
+            if (e.isDir) { win.filter = ""; fs.enter(e.path) }   // browse toward the target dir
+            else win.beginSaveName(e.name)                        // hovered file → overwrite it
+            return
+        }
+        if (win.pickDir) {
+            if (confirm) picker.chooseOne(e.isDir ? e.path : fs.cwd)  // enter selects the folder
+            else if (e.isDir) { win.filter = ""; fs.enter(e.path) }   // l/→ opens it
+            return
+        }
+        // plain file-open: enter confirms marks if any, else picks the hovered file
+        if (confirm && win.pickMulti && fs.markCount > 0) { picker.choose(fs.markedPaths()); return }
+        if (e.isDir) { win.filter = ""; fs.enter(e.path) }
+        else picker.chooseOne(e.path)
+    }
+    function beginSaveName(name) {
+        win.mode = "savename"
+        prompt.text = (name && name.length) ? name : (win.picking ? picker.suggestedName : "")
+        prompt.forceActiveFocus()
+        prompt.selectAll()
     }
     function leaveDir() { win.filter = ""; fs.leave() }
 
@@ -107,6 +151,10 @@ ApplicationWindow {
         if (win.mode === "rename") { var e = curEntry(); if (e) fs.rename(e.path, prompt.text) }
         else if (win.mode === "create") fs.create(prompt.text)
         else if (win.mode === "zip") fs.zip(win.zipHover, prompt.text)
+        else if (win.mode === "savename") {
+            var nm = ("" + prompt.text).trim()
+            if (nm.length) { picker.chooseOne(fs.cwd + "/" + nm); return }   // quits on select
+        }
         closePrompt()
     }
 
@@ -268,7 +316,9 @@ ApplicationWindow {
                 else win.zipHovered()
                 break
             case Qt.Key_Left: case Qt.Key_Backspace: win.leaveDir(); break
-            case Qt.Key_L: case Qt.Key_Right: case Qt.Key_Return: case Qt.Key_Enter: win.enterItem(); break
+            case Qt.Key_L: case Qt.Key_Right: win.enterItem(false); break
+            case Qt.Key_Return: case Qt.Key_Enter: win.enterItem(true); break
+            case Qt.Key_W: if (win.pickSave) win.beginSaveName(""); break
             case Qt.Key_H: case Qt.Key_Question: win.showHelp = true; break
             case Qt.Key_G:
                 if (shift) win.move(win.viewEntries.length)   // G -> bottom
@@ -293,10 +343,11 @@ ApplicationWindow {
                 else fs.paste()
                 break
             case Qt.Key_QuoteLeft: fs.goHome(); break     // ~
-            case Qt.Key_Q: win.close(); break
+            case Qt.Key_Q: if (win.picking) picker.cancel(); else win.close(); break
             case Qt.Key_Escape:
                 if (win.filter !== "") win.filter = ""
                 else if (fs.markCount > 0) fs.clearMarks()
+                else if (win.picking) picker.cancel()
                 else win.close()
                 break
             }
@@ -360,7 +411,7 @@ ApplicationWindow {
                     var e = win.curEntry(); if (e) fs.remember(e.name)
                     win.refreshPreview()
                 }
-                onActivated: function (i) { win.cursor = i; win.enterItem() }
+                onActivated: function (i) { win.cursor = i; win.enterItem(true) }
             }
             Preview {
                 width: panes.avail * 0.44
@@ -377,10 +428,24 @@ ApplicationWindow {
 
             StatusBar {
                 anchors.fill: parent
-                visible: win.mode === "normal" && !win.pendingG
+                visible: win.mode === "normal" && !win.pendingG && !win.picking
                 entry: win.curEntry()
                 index: win.cursor
                 count: win.viewEntries.length
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: 6
+                anchors.rightMargin: 6
+                visible: win.picking && win.mode === "normal" && !win.pendingG
+                text: win.pickHint
+                color: Theme.accent2
+                font.pixelSize: 12
+                font.family: Theme.font
+                elide: Text.ElideRight
             }
 
             Text {
@@ -402,9 +467,10 @@ ApplicationWindow {
                 anchors.leftMargin: 6
                 visible: win.mode === "rename" || win.mode === "create"
                     || win.mode === "filter" || win.mode === "search" || win.mode === "grep"
+                    || win.mode === "savename"
                 spacing: 8
                 Text {
-                    text: win.mode === "search" ? "find" : win.mode
+                    text: win.mode === "search" ? "find" : (win.mode === "savename" ? "save as" : win.mode)
                     color: Theme.accent
                     font.pixelSize: 13
                     font.family: Theme.font

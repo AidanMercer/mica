@@ -12,6 +12,8 @@ this is what's left.
 ## bigger
 - [x] undo / redo — move, copy, trash, rename, create (ctrl-z / ctrl-shift-z)
 - [x] content search — grep inside files with ripgrep (F)
+- [x] system file picker — `mica --pick` + xdg-desktop-portal wrapper, so apps
+      open mica to choose files (see `portal/`)
 - [ ] tabs or split panes
 - [ ] per-theme `mica.qml` chrome slot, like frostify's, so themes can restyle more than the palette
 

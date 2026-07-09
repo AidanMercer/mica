@@ -8,6 +8,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 
 from . import config
 from .fs import Fs
+from .picker import Picker
 from .theme import ThemeManager
 
 _LOG_CAP = 1024 * 1024
@@ -80,6 +81,27 @@ def _start_dir(argv, cfg):
     return Path.home()
 
 
+def _parse_pick(argv):
+    """--pick turns mica into a portal file chooser. Flags mirror the
+    xdg-desktop-portal FileChooser request; returns None for normal launch."""
+    if "--pick" not in argv:
+        return None
+    opts = {"multiple": False, "directory": False, "save": False, "out": "", "name": ""}
+    it = iter(argv[1:])
+    for a in it:
+        if a == "--multiple":
+            opts["multiple"] = True
+        elif a == "--directory":
+            opts["directory"] = True
+        elif a == "--save":
+            opts["save"] = True
+        elif a == "--out":
+            opts["out"] = next(it, "")
+        elif a == "--name":
+            opts["name"] = next(it, "")
+    return opts
+
+
 def main():
     _start_logging()
 
@@ -96,6 +118,8 @@ def main():
     config.ensure()
     cfg = config.load()
 
+    pick = _parse_pick(sys.argv)
+
     theme = ThemeManager(app)
     fs = Fs(_start_dir(sys.argv, cfg), cfg)
 
@@ -109,6 +133,9 @@ def main():
     ctx.setContextProperty("Rice", theme)
     ctx.setContextProperty("fs", fs)
     ctx.setContextProperty("iconFont", _icon_font(cfg))
+    # parent to app + keep the ref so PySide doesn't gc it out from under QML
+    picker = Picker(app, pick, parent=app) if pick else None
+    ctx.setContextProperty("picker", picker)
 
     def retheme():
         ctx.setContextProperty("Theme", theme.theme_dict())

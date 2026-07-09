@@ -778,6 +778,10 @@ class Fs(QObject):
             self._marked.clear()
             self._rebuild()
 
+    @Slot(result="QStringList")
+    def markedPaths(self):
+        return sorted(self._marked)
+
     def _targets(self, hover):
         return list(self._marked) if self._marked else ([hover] if hover else [])
 

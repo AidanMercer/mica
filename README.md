@@ -68,6 +68,15 @@ You can also manage bookmarks without editing the file: **`ga`** on a folder ask
 which key to map it to, **`gr`** removes one (with a confirm). Both write back to
 the config. `g t h a r` are reserved as bookmark keys.
 
+## As your system file picker
+
+mica can be the picker every app opens when it asks you to choose a file — browser
+uploads, "Open File…" in an editor, attaching in a chat app — instead of the GTK
+dialog. It hooks in through `xdg-desktop-portal`, so it works across portal-aware
+apps. See [`portal/`](portal/) — install the backend, run `portal/setup.sh`, done.
+Under the hood it's `mica --pick`, a normal mica window that returns the selected
+path rather than opening it.
+
 ## Keys
 
 | key | action | key | action |
