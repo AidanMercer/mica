@@ -14,7 +14,11 @@ this is what's left.
 - [x] system file picker — `mica --pick` + xdg-desktop-portal wrapper, so apps
       open mica to choose files (see `portal/`)
 - [x] tabs — ctrl-t / ctrl-w / tab, per-tab cwd + cursor + marks (shared clipboard)
-- [ ] per-theme `mica.qml` chrome slot, like frostify's, so themes can restyle more than the palette
+- [x] per-theme `mica.qml` chrome slot, like frostify's, so themes can restyle
+      more than the palette — pal/host injection, masked backdrop/overlay
+      Components, cardBg/cardBorder/cardBorderWidth/cardRadius, and a `wordmark`
+      voice; scenery gates on window focus (`host.active`) and flourishes on a
+      directory change (`host.navId`). Shipped for all 11 rice themes.
 
 ## rough edges
 - [x] live config reload — find_skip / terminal / cache / bookmarks apply on save

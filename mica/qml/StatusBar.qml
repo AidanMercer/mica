@@ -5,6 +5,12 @@ Item {
     property var entry: null
     property int index: 0
     property int count: 0
+    property var chrome: null      // rice theme layer — optional wordmark override
+
+    function cp(name, fallback) {
+        var v = chrome ? chrome[name] : undefined
+        return v === undefined ? fallback : v
+    }
 
     property string message: ""
     property bool messageError: false
@@ -61,7 +67,8 @@ Item {
             font.family: Theme.font
         }
         Text {
-            text: Rice.name !== "" ? Rice.name : "—"
+            // a theme can speak here via chrome.wordmark; otherwise the name
+            text: root.cp("wordmark", Rice.name !== "" ? Rice.name : "—")
             color: Theme.accent
             font.pixelSize: 12
             font.family: Theme.font

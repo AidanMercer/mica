@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import QtQuick.Effects
 
 ApplicationWindow {
     id: win
@@ -26,6 +27,11 @@ ApplicationWindow {
     property string bookmarkTarget: ""     // dir being bookmarked while in bookmark_add
     property string pendingBookmark: ""    // key awaiting an unbookmark confirm
     property var previewData: ({ "type": "empty" })
+
+    // stable "where are we" id for the theme chrome — themes flourish on a
+    // directory change (the file-manager analog of frostify's track change)
+    // by watching host.navId, not the noisier fs.cwd binding directly.
+    readonly property string navId: fs.cwd
 
     property bool showOpenWith: false
     property var openWithApps: []
@@ -278,13 +284,66 @@ ApplicationWindow {
     }
     Component.onCompleted: { refreshPreview(); keys.forceActiveFocus() }
 
-    // frosted glass — the translucent fill lets Hyprland's blur through
+    // ---- rice theme layer ----
+    // Optional mica.qml from the active ~/.config/themes/<x>/ — same slot
+    // grammar as frostify.qml and the shell's popup.qml: an invisible Item root
+    // that may expose cardBg/cardBorder/cardBorderWidth/cardRadius plus
+    // backdrop/overlay Components (mounted below/above the panes, masked to the
+    // window radius). See themes/AI-INSTRUCTION.md.
+    function riceProp(name, fallback) {
+        var it = riceLoader.item
+        if (!it) return fallback
+        var v = it[name]
+        return v === undefined ? fallback : v
+    }
+    Loader {
+        id: riceLoader
+        visible: false
+        function reload() {
+            source = ""   // drop the old chrome before swapping injections
+            if (!Rice.source) return
+            var props = {}
+            if (Rice.wantsPal) props.pal = Rice.pal
+            if (Rice.wantsHost) props.host = win
+            setSource(Rice.source, props)
+        }
+        onStatusChanged: if (status === Loader.Error)
+            console.warn("theme chrome failed to load:", Rice.source)
+        Component.onCompleted: reload()
+    }
+    Connections {
+        target: Rice
+        function onThemeChanged() { riceLoader.reload() }
+    }
+
+    // frosted glass — the translucent fill lets Hyprland's blur through. A theme
+    // can retint/reshape the frame via cardBg/cardBorder/cardBorderWidth/cardRadius.
     Rectangle {
         anchors.fill: parent
-        radius: Theme.radius
-        color: Theme.bg
-        border.color: Theme.border
-        border.width: 1
+        radius: win.riceProp("cardRadius", Theme.radius)
+        color: win.riceProp("cardBg", Theme.bg)
+        border.color: win.riceProp("cardBorder", Theme.border)
+        border.width: win.riceProp("cardBorderWidth", 1)
+    }
+
+    // rounded-rect mask so theme scenery can't poke past the window corners;
+    // only rendered while a backdrop/overlay is actually mounted
+    Rectangle {
+        id: fxMask
+        anchors.fill: parent
+        radius: win.riceProp("cardRadius", Theme.radius)
+        color: "black"
+        opacity: 0
+        layer.enabled: backdropFx.item !== null || overlayFx.item !== null
+    }
+
+    // theme scenery behind the panes (shaders, particles, gradients)
+    Loader {
+        id: backdropFx
+        anchors.fill: parent
+        sourceComponent: win.riceProp("backdrop", null) || null
+        layer.enabled: item !== null
+        layer.effect: MultiEffect { maskEnabled: true; maskSource: fxMask }
     }
 
     Item {
@@ -470,6 +529,7 @@ ApplicationWindow {
                 entry: win.curEntry()
                 index: win.cursor
                 count: win.viewEntries.length
+                chrome: riceLoader.item
             }
 
             Text {
@@ -585,6 +645,16 @@ ApplicationWindow {
                 elide: Text.ElideRight
             }
         }
+    }
+
+    // theme scenery above the panes (scanlines, vignettes, sweeps) — no input
+    // handlers by contract, so clicks fall through to the panes below
+    Loader {
+        id: overlayFx
+        anchors.fill: parent
+        sourceComponent: win.riceProp("overlay", null) || null
+        layer.enabled: item !== null
+        layer.effect: MultiEffect { maskEnabled: true; maskSource: fxMask }
     }
 
     CheatSheet {

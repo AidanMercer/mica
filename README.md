@@ -43,6 +43,16 @@ loaders and frostify use, and derives its palette from the `accent*` / `hue_*` /
 tokens. It watches `~/.cache/awww` and the theme's `config.toml`, so switching or editing a
 theme re-skins mica while it runs. `MICA_THEME=<name>` pins a theme for testing.
 
+Beyond the palette, a theme can ship a **`mica.qml` chrome slot** (same grammar as
+frostify's `frostify.qml`): an invisible `Item` that mica loads with the theme's `pal`
+snapshot and the mica `host` window injected. It can restyle the window frame
+(`cardBg` / `cardBorder` / `cardBorderWidth` / `cardRadius`), mount `backdrop` / `overlay`
+`Component`s behind and above the miller columns (shaders, particles, Canvas — auto-masked
+to the window's rounded corners), and set a status-bar `wordmark`. Continuous motion gates
+on window focus (`host.active`); one-shot flourishes fire on a directory change
+(`host.navId`). mica.qml hot-reloads with the rest of the theme. See the reference file in
+`themes/default/mica.qml` and the full contract in `themes/AI-INSTRUCTION.md`.
+
 ## Config
 
 mica writes a commented `~/.config/mica/config.toml` on first run (there's a
