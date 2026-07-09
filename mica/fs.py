@@ -43,6 +43,12 @@ def _tilde(path) -> str:
     return p
 
 
+def _tab_label(cwd: Path) -> str:
+    if cwd == Path.home():
+        return "~"
+    return cwd.name or "/"
+
+
 def _kind(path: Path, is_dir: bool, is_link: bool, is_exec: bool) -> str:
     if is_dir:
         return "dir"
@@ -372,6 +378,7 @@ class Fs(QObject):
     searchReady = Signal()      # the find index finished building
     grepReady = Signal()        # content-search results grew or finished
     bookmarksChanged = Signal()
+    tabsChanged = Signal()      # a tab was added / closed / switched
 
     def __init__(self, start, cfg=None, parent=None):
         super().__init__(parent)
@@ -404,6 +411,9 @@ class Fs(QObject):
         self._rg = None
         self._grep_gen = 0
         self._grep_results = []
+        self._forced_focus = None    # cursor to land on after _rebuild (tab switch)
+        self._tabs = [{"cwd": self._cwd, "marked": self._marked, "cursor": 0}]
+        self._tab = 0
         self._rebuild()
 
     def applyConfig(self, cfg):
@@ -495,9 +505,13 @@ class Fs(QObject):
         else:
             self._parent = []
             self._parent_index = 0
-        want = self._remember.get(str(self._cwd))
-        self._focus_index = next(
-            (i for i, e in enumerate(self._entries) if e["name"] == want), 0)
+        if self._forced_focus is not None:
+            self._focus_index = min(self._forced_focus, max(0, len(self._entries) - 1))
+            self._forced_focus = None
+        else:
+            want = self._remember.get(str(self._cwd))
+            self._focus_index = next(
+                (i for i, e in enumerate(self._entries) if e["name"] == want), 0)
         self.dirChanged.emit()
 
     # --- navigation ------------------------------------------------------
@@ -505,6 +519,65 @@ class Fs(QObject):
     @Slot(str)
     def remember(self, name):
         self._remember[str(self._cwd)] = name
+
+    # --- tabs ------------------------------------------------------------
+
+    @Property(int, notify=tabsChanged)
+    def tabCount(self):
+        return len(self._tabs)
+
+    @Property(int, notify=tabsChanged)
+    def activeTab(self):
+        return self._tab
+
+    @Property("QVariantList", notify=dirChanged)
+    def tabLabels(self):
+        # active tab's stored cwd lags until a switch, so read the live one for it
+        return [_tab_label(self._cwd if i == self._tab else t["cwd"])
+                for i, t in enumerate(self._tabs)]
+
+    def _stash(self, cursor):
+        self._tabs[self._tab] = {"cwd": self._cwd, "marked": self._marked, "cursor": cursor}
+
+    def _activate(self):
+        t = self._tabs[self._tab]
+        self._cwd = t["cwd"]
+        self._marked = t["marked"]
+        self._forced_focus = t["cursor"]
+        self._rebuild()
+        self.tabsChanged.emit()
+
+    @Slot(int, int)
+    def switchTab(self, i, cursor):
+        if 0 <= i < len(self._tabs) and i != self._tab:
+            self._stash(cursor)
+            self._tab = i
+            self._activate()
+
+    @Slot(int)
+    def newTab(self, cursor):
+        self._stash(cursor)
+        self._tabs.insert(self._tab + 1, {"cwd": self._cwd, "marked": set(), "cursor": 0})
+        self._tab += 1
+        self._activate()
+
+    @Slot(int)
+    def closeTab(self, cursor):
+        if len(self._tabs) <= 1:
+            return
+        del self._tabs[self._tab]
+        self._tab = min(self._tab, len(self._tabs) - 1)
+        self._activate()
+
+    @Slot(int)
+    def nextTab(self, cursor):
+        if len(self._tabs) > 1:
+            self.switchTab((self._tab + 1) % len(self._tabs), cursor)
+
+    @Slot(int)
+    def prevTab(self, cursor):
+        if len(self._tabs) > 1:
+            self.switchTab((self._tab - 1) % len(self._tabs), cursor)
 
     @Slot(str)
     def enter(self, path):

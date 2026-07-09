@@ -181,6 +181,13 @@ ApplicationWindow {
     }
     function closeOpenWith() { win.showOpenWith = false; keys.forceActiveFocus() }
 
+    // tabs — clear the filter across a switch so the new tab shows its dir plainly
+    function tabNew()   { win.filter = ""; fs.newTab(win.cursor) }
+    function tabClose() { win.filter = ""; fs.closeTab(win.cursor) }
+    function tabNext()  { win.filter = ""; fs.nextTab(win.cursor) }
+    function tabPrev()  { win.filter = ""; fs.prevTab(win.cursor) }
+    function tabGo(i)   { win.filter = ""; fs.switchTab(i, win.cursor) }
+
     function beginSearch() {
         win.searchResults = []
         win.cursor = 0
@@ -326,8 +333,10 @@ ApplicationWindow {
                 }
                 break
             case Qt.Key_U: if (ctrl) win.move(-12); else fs.unzip(win.curEntry() ? win.curEntry().path : ""); break
-            case Qt.Key_T: fs.openTerminal(); break
+            case Qt.Key_T: if (ctrl) win.tabNew(); else fs.openTerminal(); break
             case Qt.Key_O: win.beginOpenWith(); break
+            case Qt.Key_Tab: win.tabNext(); e.accepted = true; break
+            case Qt.Key_Backtab: win.tabPrev(); e.accepted = true; break
             case Qt.Key_Z:
                 if (ctrl && shift) fs.redo()
                 else if (ctrl) fs.undo()
@@ -336,7 +345,7 @@ ApplicationWindow {
             case Qt.Key_Left: case Qt.Key_Backspace: win.leaveDir(); break
             case Qt.Key_L: case Qt.Key_Right: win.enterItem(false); break
             case Qt.Key_Return: case Qt.Key_Enter: win.enterItem(true); break
-            case Qt.Key_W: if (win.pickSave) win.beginSaveName(""); break
+            case Qt.Key_W: if (ctrl) win.tabClose(); else if (win.pickSave) win.beginSaveName(""); break
             case Qt.Key_H: case Qt.Key_Question: win.showHelp = true; break
             case Qt.Key_G:
                 if (shift) win.move(win.viewEntries.length)   // G -> bottom
@@ -371,10 +380,19 @@ ApplicationWindow {
             }
         }
 
+        // ---- tab strip (only when there's more than one) ----
+        TabStrip {
+            id: tabStrip
+            anchors { top: parent.top; left: parent.left; right: parent.right }
+            height: fs.tabCount > 1 ? 28 : 0
+            visible: fs.tabCount > 1
+            onSelected: function (i) { win.tabGo(i) }
+        }
+
         // ---- breadcrumb ----
         Item {
             id: header
-            anchors { top: parent.top; left: parent.left; right: parent.right }
+            anchors { top: tabStrip.bottom; left: parent.left; right: parent.right }
             height: 30
             Text {
                 id: crumbHeadT

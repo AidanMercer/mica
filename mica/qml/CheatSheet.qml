@@ -27,6 +27,8 @@ Item {
                 ["R", "refresh"],
                 ["t", "terminal here"],
                 ["o", "open with…"],
+                ["ctrl-t  ctrl-w", "new / close tab"],
+                ["tab  ⇧tab", "next / prev tab"],
             ] },
         ],
         [
