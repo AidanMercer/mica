@@ -60,6 +60,10 @@ c = "~/.config"
 Press `g` then the key to jump (`gg` top, `gt` trash, `gh` home are built in). A
 hint of the available jumps shows in the status bar the moment you press `g`.
 
+You can also manage bookmarks without editing the file: **`ga`** on a folder asks
+which key to map it to, **`gr`** removes one (with a confirm). Both write back to
+the config. `g t h a r` are reserved as bookmark keys.
+
 ## Keys
 
 | key | action | key | action |

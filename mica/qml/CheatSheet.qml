@@ -15,6 +15,7 @@ Item {
                 ["~", "home"],
                 ["gt", "go to the trash"],
                 ["g + key", "jump to a bookmark"],
+                ["ga  gr", "add / remove a bookmark"],
             ] },
             { title: "view", rows: [
                 ["space", "mark"],

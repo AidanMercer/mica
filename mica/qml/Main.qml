@@ -19,9 +19,16 @@ ApplicationWindow {
     property bool pendingG: false
     property bool showHelp: false
     property var searchResults: []
-    property string confirmKind: "trash"   // "trash" | "delete"
+    property string confirmKind: "trash"   // "trash" | "delete" | "unbookmark"
     property string zipHover: ""
+    property string bookmarkTarget: ""     // dir being bookmarked while in bookmark_add
+    property string pendingBookmark: ""    // key awaiting an unbookmark confirm
     property var previewData: ({ "type": "empty" })
+
+    readonly property string bookmarkTargetDisplay: {
+        var p = win.bookmarkTarget, h = fs.homePath
+        return (h && p.indexOf(h) === 0) ? "~" + p.substring(h.length) : p
+    }
 
     readonly property string tildePath: {
         var s = fs.cwd, h = fs.homePath
@@ -123,6 +130,31 @@ ApplicationWindow {
         keys.forceActiveFocus()
     }
 
+    function beginAddBookmark() {
+        var e = curEntry()
+        win.bookmarkTarget = (e && e.isDir) ? e.path : fs.cwd
+        win.mode = "bookmark_add"
+    }
+    function finishAddBookmark(ev) {
+        if (ev.key === Qt.Key_Escape) { win.mode = "normal"; return }
+        var k = ev.text
+        if (!k || k.length !== 1) return                 // ignore modifiers; keep waiting
+        var res = fs.addBookmark(k, win.bookmarkTarget)
+        if (res !== "taken" && res !== "reserved") win.mode = "normal"
+    }
+    function beginRemoveBookmark() {
+        if (Object.keys(fs.bookmarks).length > 0) win.mode = "bookmark_remove"
+    }
+    function finishRemoveBookmark(ev) {
+        if (ev.key === Qt.Key_Escape) { win.mode = "normal"; return }
+        var k = ev.text
+        if (!k || k.length !== 1) return
+        if (fs.bookmarkPath(k) === "") { win.mode = "normal"; return }
+        win.pendingBookmark = k
+        win.confirmKind = "unbookmark"
+        win.mode = "confirm"
+    }
+
     onFilterChanged: { cursor = 0; refreshPreview() }
 
     Connections {
@@ -163,13 +195,18 @@ ApplicationWindow {
             if (win.showHelp) { win.showHelp = false; return }
             if (win.mode === "confirm") {
                 if (e.key === Qt.Key_Y) {
-                    var cp = win.curEntry() ? win.curEntry().path : ""
-                    if (win.confirmKind === "delete") fs.remove(cp)
-                    else fs.trash(cp)
+                    if (win.confirmKind === "unbookmark") fs.removeBookmark(win.pendingBookmark)
+                    else {
+                        var cp = win.curEntry() ? win.curEntry().path : ""
+                        if (win.confirmKind === "delete") fs.remove(cp)
+                        else fs.trash(cp)
+                    }
                 }
                 win.mode = "normal"
                 return
             }
+            if (win.mode === "bookmark_add") { win.finishAddBookmark(e); return }
+            if (win.mode === "bookmark_remove") { win.finishRemoveBookmark(e); return }
             var shift = e.modifiers & Qt.ShiftModifier
             var ctrl = e.modifiers & Qt.ControlModifier
             var wasG = win.pendingG
@@ -179,6 +216,8 @@ ApplicationWindow {
                 if (e.key === Qt.Key_G) { win.move(-win.viewEntries.length); return }  // gg -> top
                 if (e.key === Qt.Key_T) { fs.goTrash(); return }                       // gt -> trash
                 if (e.key === Qt.Key_H) { fs.goHome(); return }                        // gh -> home
+                if (e.key === Qt.Key_A) { win.beginAddBookmark(); return }              // ga -> add bookmark
+                if (e.key === Qt.Key_R) { win.beginRemoveBookmark(); return }           // gr -> remove bookmark
                 if (e.text && fs.gotoBookmark(e.text)) return                          // g<key> bookmark
                 // any other key falls through and is handled normally
             }
@@ -326,7 +365,8 @@ ApplicationWindow {
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 6
-                visible: win.mode !== "normal" && win.mode !== "confirm"
+                visible: win.mode === "rename" || win.mode === "create"
+                    || win.mode === "filter" || win.mode === "search"
                 spacing: 8
                 Text {
                     text: win.mode === "search" ? "find" : win.mode
@@ -371,8 +411,11 @@ ApplicationWindow {
                 spacing: 8
                 visible: win.mode === "confirm"
                 Text {
-                    text: (win.confirmKind === "delete" ? "permanently delete " : "trash ")
-                        + (fs.markCount > 0 ? fs.markCount : 1) + " item(s)?"
+                    text: win.confirmKind === "unbookmark"
+                        ? ("remove bookmark '" + win.pendingBookmark + "' → "
+                           + fs.bookmarkPath(win.pendingBookmark) + "?")
+                        : (win.confirmKind === "delete" ? "permanently delete " : "trash ")
+                          + (fs.markCount > 0 ? fs.markCount : 1) + " item(s)?"
                     color: win.confirmKind === "delete" ? Theme.image : Theme.accent
                     font.bold: true
                     font.pixelSize: 13
@@ -384,6 +427,22 @@ ApplicationWindow {
                     font.pixelSize: 13
                     font.family: Theme.font
                 }
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: 6
+                anchors.rightMargin: 6
+                visible: win.mode === "bookmark_add" || win.mode === "bookmark_remove"
+                text: win.mode === "bookmark_add"
+                    ? "bookmark  " + win.bookmarkTargetDisplay + "  as —  press a key   (esc cancels)"
+                    : "remove which?  [ " + Object.keys(fs.bookmarks).join(" ") + " ]   (esc cancels)"
+                color: Theme.accent2
+                font.pixelSize: 13
+                font.family: Theme.font
+                elide: Text.ElideRight
             }
         }
     }

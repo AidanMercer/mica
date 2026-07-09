@@ -68,3 +68,33 @@ def load():
         if key in data:
             cfg[key] = data[key]
     return cfg
+
+
+def save_bookmarks(bookmarks):
+    """Rewrite just the [bookmarks] table in place, leaving the rest of the file
+    (other settings, comments) untouched. stdlib has no toml writer, so this is a
+    surgical block replacement rather than a full re-serialise."""
+    def esc(v):
+        return v.replace("\\", "\\\\").replace('"', '\\"')
+
+    block = ["[bookmarks]"]
+    block += [f'{k} = "{esc(str(bookmarks[k]))}"' for k in sorted(bookmarks)]
+
+    try:
+        lines = CONFIG_FILE.read_text().splitlines()
+    except OSError:
+        lines = []
+
+    start = next((i for i, ln in enumerate(lines) if ln.strip() == "[bookmarks]"), None)
+    if start is None:
+        out = lines + ([""] if lines and lines[-1].strip() else []) + block
+    else:
+        end = next((j for j in range(start + 1, len(lines))
+                    if lines[j].lstrip().startswith("[")), len(lines))
+        out = lines[:start] + block + lines[end:]
+
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        CONFIG_FILE.write_text("\n".join(out).rstrip("\n") + "\n")
+    except OSError:
+        pass

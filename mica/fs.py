@@ -12,6 +12,7 @@ from pathlib import Path
 from PySide6.QtCore import (Property, QObject, QRunnable, QThreadPool, Signal,
                             Slot)
 
+from . import config
 from .thumbs import Thumbnailer
 
 _PREVIEW_BYTES = 64 * 1024
@@ -29,6 +30,17 @@ _DOC = {"pdf", "txt", "md", "doc", "docx", "odt", "epub"}
 _ARCHIVE_SUFFIXES = (".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".zip", ".tar")
 _TERMINALS = ("kitty", "alacritty", "foot", "wezterm", "ghostty", "konsole",
               "gnome-terminal", "xterm")
+# g-prefix keys taken by built-in jumps, so they can't be bookmark keys
+_RESERVED_G = {"g", "t", "h", "a", "r"}
+
+
+def _tilde(path) -> str:
+    p, home = str(path), str(Path.home())
+    if p == home:
+        return "~"
+    if p.startswith(home + "/"):
+        return "~" + p[len(home):]
+    return p
 
 
 def _kind(path: Path, is_dir: bool, is_link: bool, is_exec: bool) -> str:
@@ -304,6 +316,7 @@ class Fs(QObject):
     thumbReady = Signal(str, str)  # source path, thumbnail path
     progress = Signal(int, int, str)  # done, total, verb — a "" verb clears it
     searchReady = Signal()      # the find index finished building
+    bookmarksChanged = Signal()
 
     def __init__(self, start, cfg=None, parent=None):
         super().__init__(parent)
@@ -338,7 +351,7 @@ class Fs(QObject):
     def homePath(self):
         return str(Path.home())
 
-    @Property("QVariantMap", constant=True)
+    @Property("QVariantMap", notify=bookmarksChanged)
     def bookmarks(self):
         return self._bookmarks
 
@@ -468,6 +481,40 @@ class Fs(QObject):
         else:
             self.notify.emit(f"bookmark '{key}' → {path} isn't a dir", True)
         return True
+
+    @Slot(str, result=str)
+    def bookmarkPath(self, key):
+        return self._bookmarks.get(key, "")
+
+    @Slot(str, str, result=str)
+    def addBookmark(self, key, path):
+        """Map key -> path, persisting to the config. Returns a status the UI
+        uses to decide whether to keep asking: reserved/taken keep the prompt
+        open, ok/same close it."""
+        if key.lower() in _RESERVED_G:
+            self.notify.emit(f"'{key}' is reserved (gg/gt/gh/ga/gr)", True)
+            return "reserved"
+        disp = _tilde(path)
+        existing = self._bookmarks.get(key)
+        if existing == disp:
+            self.notify.emit(f"already bookmarked as '{key}'", False)
+            return "same"
+        if existing is not None:
+            self.notify.emit(f"'{key}' is taken → {existing}", True)
+            return "taken"
+        self._bookmarks[key] = disp
+        config.save_bookmarks(self._bookmarks)
+        self.bookmarksChanged.emit()
+        self.notify.emit(f"bookmarked '{key}' → {disp}", False)
+        return "ok"
+
+    @Slot(str)
+    def removeBookmark(self, key):
+        if key in self._bookmarks:
+            self._bookmarks.pop(key)
+            config.save_bookmarks(self._bookmarks)
+            self.bookmarksChanged.emit()
+            self.notify.emit(f"removed bookmark '{key}'", False)
 
     @Slot(str)
     def jumpTo(self, path):
