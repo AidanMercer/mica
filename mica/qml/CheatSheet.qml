@@ -37,6 +37,7 @@ Item {
                 ["r", "rename"],
                 ["z", "zip  (lone folder = its contents)"],
                 ["u", "unzip into a folder"],
+                ["ctrl-z", "undo  ·  ctrl-⇧-z redo"],
             ] },
             { title: "quit", rows: [
                 ["q", "quit"],

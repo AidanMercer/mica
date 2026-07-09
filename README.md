@@ -75,6 +75,7 @@ the config. `g t h a r` are reserved as bookmark keys.
 | `y` `x` `p` | yank / cut / paste | `d` `D` | trash / delete |
 | `a` | create (`foo/` makes a dir) | `r` | rename |
 | `z` `u` | zip / unzip into a folder | `t` | terminal here |
+| `ctrl-z` | undo | `ctrl-⇧-z` `ctrl-y` | redo |
 | `~` `gt` | home / go to trash | `q` / `esc` | quit |
 
 Press `h` or `?` in-app for the cheat sheet. `gt` jumps to the trash, where `p`

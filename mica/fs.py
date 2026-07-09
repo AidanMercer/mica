@@ -282,7 +282,18 @@ def _trash(path: Path):
     stamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     (info_dir / f"{name}.trashinfo").write_text(
         f"[Trash Info]\nPath={quoted}\nDeletionDate={stamp}\n")
-    shutil.move(str(path), str(files_dir / name))
+    dest = files_dir / name
+    shutil.move(str(path), str(dest))
+    return dest
+
+
+def _relocate(frm: Path, to: Path) -> Path:
+    """Move frm to to, deduping if to is occupied. Returns where it landed —
+    used by undo/redo so a reversed move never clobbers something new."""
+    to = _dedupe(to)
+    to.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(frm), str(to))
+    return to
 
 
 def _trashinfo(files_path: Path):
@@ -343,6 +354,8 @@ class Fs(QObject):
         self._parent_index = 0
         self._focus_index = 0
         self._search_index = []
+        self._undo_stack = []
+        self._redo_stack = []
         self._rebuild()
 
     # --- exposed state ---------------------------------------------------
@@ -697,20 +710,25 @@ class Fs(QObject):
 
         def job(sig):
             ok = failed = 0
+            moved, copied = [], []
             for i, src in enumerate(sources):
                 sig.progress.emit(i + 1, total, verb)
                 dst = _dedupe(cwd / src.name)
                 try:
                     if cut:
                         shutil.move(str(src), str(dst))
+                        moved.append((str(src), str(dst)))
                     elif src.is_dir():
                         shutil.copytree(src, dst, symlinks=True)
+                        copied.append((str(src), str(dst)))
                     else:
                         shutil.copy2(src, dst, follow_symlinks=False)
+                        copied.append((str(src), str(dst)))
                     ok += 1
                 except OSError:
                     failed += 1
-            return {"ok": ok, "failed": failed, "cut": cut}
+            return {"ok": ok, "failed": failed, "cut": cut,
+                    "moved": moved, "copied": copied}
 
         def finalize(res):
             if res["cut"]:
@@ -719,6 +737,10 @@ class Fs(QObject):
             self._marked.clear()
             self._rebuild()
             self._report(res, "pasted")
+            if res["moved"]:
+                self._record("move", *self._move_jobs(res["moved"]))
+            elif res["copied"]:
+                self._record("copy", *self._copy_jobs(res["copied"]))
 
         self._run_op(job, finalize)
 
@@ -731,19 +753,23 @@ class Fs(QObject):
 
         def job(sig):
             ok = failed = 0
+            trashed = []
             for i, p in enumerate(targets):
                 sig.progress.emit(i + 1, total, "trashing")
                 try:
-                    _trash(p)
+                    dest = _trash(p)
+                    trashed.append((str(p), str(dest)))
                     ok += 1
                 except OSError:
                     failed += 1
-            return {"ok": ok, "failed": failed}
+            return {"ok": ok, "failed": failed, "trashed": trashed}
 
         def finalize(res):
             self._marked.clear()
             self._rebuild()
             self._report(res, "trashed")
+            if res["trashed"]:
+                self._record("trash", *self._trash_jobs(res["trashed"]))
 
         self._run_op(job, finalize)
 
@@ -780,6 +806,104 @@ class Fs(QObject):
             self.notify.emit(f"{verb} {res['ok']}, {res['failed']} failed", True)
         else:
             self.notify.emit(f"{verb} {res['ok']} item(s)", False)
+
+    # --- undo / redo -----------------------------------------------------
+
+    def _record(self, label, undo_job, redo_job):
+        self._undo_stack.append({"label": label, "undo": undo_job, "redo": redo_job})
+        del self._undo_stack[:-60]          # keep the last 60 actions
+        self._redo_stack.clear()            # a new action forks the timeline
+
+    @Slot()
+    def undo(self):
+        if not self._undo_stack:
+            self.notify.emit("nothing to undo", True)
+            return
+        tx = self._undo_stack.pop()
+        self._run_op(tx["undo"], lambda res: self._after(tx, self._redo_stack, "undid"))
+
+    @Slot()
+    def redo(self):
+        if not self._redo_stack:
+            self.notify.emit("nothing to redo", True)
+            return
+        tx = self._redo_stack.pop()
+        self._run_op(tx["redo"], lambda res: self._after(tx, self._undo_stack, "redid"))
+
+    def _after(self, tx, dest_stack, word):
+        dest_stack.append(tx)
+        self._marked.clear()
+        self._rebuild()
+        self.notify.emit(f"{word} {tx['label']}", False)
+
+    def _move_jobs(self, moved):
+        state = [[o, d] for o, d in moved]      # [origin, current dst], flips each way
+        def undo_job(sig):
+            for i in range(len(state)):
+                sig.progress.emit(i + 1, len(state), "undoing")
+                state[i][0] = str(_relocate(Path(state[i][1]), Path(state[i][0])))
+            return {}
+        def redo_job(sig):
+            for i in range(len(state)):
+                sig.progress.emit(i + 1, len(state), "redoing")
+                state[i][1] = str(_relocate(Path(state[i][0]), Path(state[i][1])))
+            return {}
+        return undo_job, redo_job
+
+    def _copy_jobs(self, copied):
+        state = [[s, d] for s, d in copied]     # [source, copy location]
+        def undo_job(sig):
+            for i in range(len(state)):
+                sig.progress.emit(i + 1, len(state), "undoing")
+                dst = Path(state[i][1])
+                if dst.exists():
+                    _trash(dst)
+            return {}
+        def redo_job(sig):
+            for i in range(len(state)):
+                sig.progress.emit(i + 1, len(state), "redoing")
+                src, dst = Path(state[i][0]), _dedupe(Path(state[i][1]))
+                if src.is_dir():
+                    shutil.copytree(src, dst, symlinks=True)
+                elif src.exists():
+                    shutil.copy2(src, dst, follow_symlinks=False)
+                state[i][1] = str(dst)
+            return {}
+        return undo_job, redo_job
+
+    def _trash_jobs(self, trashed):
+        state = [[o, t] for o, t in trashed]    # [origin, trash path]
+        def undo_job(sig):                      # restore
+            for i in range(len(state)):
+                sig.progress.emit(i + 1, len(state), "undoing")
+                tp = Path(state[i][1])
+                info = _trashinfo(tp)
+                state[i][0] = str(_relocate(tp, Path(state[i][0])))
+                if info:
+                    info.unlink(missing_ok=True)
+            return {}
+        def redo_job(sig):                      # re-trash
+            for i in range(len(state)):
+                sig.progress.emit(i + 1, len(state), "redoing")
+                state[i][1] = str(_trash(Path(state[i][0])))
+            return {}
+        return undo_job, redo_job
+
+    def _create_jobs(self, landing, target, is_dir):
+        def undo_job(sig):
+            p = Path(landing)
+            if p.exists():
+                _trash(p)
+            return {}
+        def redo_job(sig):
+            t = Path(target)
+            if is_dir:
+                t.mkdir(parents=True, exist_ok=True)
+            else:
+                t.parent.mkdir(parents=True, exist_ok=True)
+                t.touch(exist_ok=True)
+            return {}
+        return undo_job, redo_job
 
     @Slot(str, result=bool)
     def canRestore(self, hover):
@@ -821,6 +945,7 @@ class Fs(QObject):
             Path(path).rename(dst)
             self._remember[str(self._cwd)] = dst.name
             self._rebuild()
+            self._record("rename", *self._move_jobs([(str(path), str(dst))]))
         except OSError as e:
             self.notify.emit(f"rename failed: {e.strerror or e}", True)
 
@@ -831,7 +956,17 @@ class Fs(QObject):
             return
         is_dir = raw.endswith("/")
         clean = raw.rstrip("/")
+        if not clean:
+            return
         target = self._cwd / clean
+        # topmost component that doesn't exist yet — all undo should remove
+        landing = None
+        probe = self._cwd
+        for part in clean.split("/"):
+            probe = probe / part
+            if not probe.exists():
+                landing = probe
+                break
         try:
             if is_dir:
                 target.mkdir(parents=True, exist_ok=True)
@@ -840,6 +975,8 @@ class Fs(QObject):
                 target.touch(exist_ok=True)
             self._remember[str(self._cwd)] = clean.split("/")[0]
             self._rebuild()
+            if landing is not None:
+                self._record("create", *self._create_jobs(str(landing), str(target), is_dir))
         except OSError as e:
             self.notify.emit(f"create failed: {e.strerror or e}", True)
 

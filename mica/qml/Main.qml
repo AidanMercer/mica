@@ -234,7 +234,11 @@ ApplicationWindow {
                 break
             case Qt.Key_U: if (ctrl) win.move(-12); else fs.unzip(win.curEntry() ? win.curEntry().path : ""); break
             case Qt.Key_T: fs.openTerminal(); break
-            case Qt.Key_Z: win.zipHovered(); break
+            case Qt.Key_Z:
+                if (ctrl && shift) fs.redo()
+                else if (ctrl) fs.undo()
+                else win.zipHovered()
+                break
             case Qt.Key_Left: case Qt.Key_Backspace: win.leaveDir(); break
             case Qt.Key_L: case Qt.Key_Right: case Qt.Key_Return: case Qt.Key_Enter: win.enterItem(); break
             case Qt.Key_H: case Qt.Key_Question: win.showHelp = true; break
@@ -250,7 +254,10 @@ ApplicationWindow {
             case Qt.Key_F: win.beginSearch(); break
             case Qt.Key_A: win.beginCreate(); break
             case Qt.Key_R: if (shift) fs.refresh(); else win.beginRename(); break
-            case Qt.Key_Y: fs.yank(win.curEntry() ? win.curEntry().path : "", false); break
+            case Qt.Key_Y:
+                if (ctrl) fs.redo()
+                else fs.yank(win.curEntry() ? win.curEntry().path : "", false)
+                break
             case Qt.Key_X: fs.yank(win.curEntry() ? win.curEntry().path : "", true); break
             case Qt.Key_P:
                 if (fs.canRestore(win.curEntry() ? win.curEntry().path : ""))

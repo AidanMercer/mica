@@ -11,7 +11,8 @@ this is what's left.
 - [ ] bulk rename — dump the marked names into `$EDITOR`, apply the diff on save
 
 ## bigger
-- [ ] undo — reverse the last move / rename / trash
+- [x] undo / redo — move, copy, trash, rename, create (ctrl-z / ctrl-shift-z)
+- [ ] extend undo to zip / unzip
 - [ ] tabs or split panes
 - [ ] content search — `rg` inside files, not just filenames
 - [ ] per-theme `mica.qml` chrome slot, like frostify's, so themes can restyle more than the palette
