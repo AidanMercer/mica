@@ -18,6 +18,7 @@ ApplicationWindow {
     property string filter: ""
     property bool pendingG: false
     property bool showHelp: false
+    property string zipHover: ""
     property var previewData: ({ "type": "empty" })
 
     readonly property string tildePath: {
@@ -71,11 +72,19 @@ ApplicationWindow {
     }
     function beginCreate() { win.mode = "create"; prompt.text = ""; prompt.forceActiveFocus() }
     function beginFilter() { win.mode = "filter"; prompt.text = win.filter; prompt.forceActiveFocus() }
+    function beginZip(name) { win.mode = "zip"; prompt.text = name; prompt.forceActiveFocus(); prompt.selectAll() }
     function closePrompt() { win.mode = "normal"; keys.forceActiveFocus() }
     function commitPrompt() {
         if (win.mode === "rename") { var e = curEntry(); if (e) fs.rename(e.path, prompt.text) }
         else if (win.mode === "create") fs.create(prompt.text)
+        else if (win.mode === "zip") fs.zip(win.zipHover, prompt.text)
         closePrompt()
+    }
+
+    function zipHovered() {
+        var p = curEntry() ? curEntry().path : ""
+        if (fs.zipShouldPrompt(p)) { win.zipHover = p; beginZip(fs.zipDefaultName(p)) }
+        else fs.zip(p, fs.zipDefaultName(p))
     }
 
     onFilterChanged: { cursor = 0; refreshPreview() }
@@ -120,7 +129,9 @@ ApplicationWindow {
             case Qt.Key_J: case Qt.Key_Down: win.move(1); break
             case Qt.Key_K: case Qt.Key_Up: win.move(-1); break
             case Qt.Key_D: if (ctrl) win.move(12); else if (win.curEntry()) win.mode = "confirm"; break
-            case Qt.Key_U: if (ctrl) win.move(-12); break
+            case Qt.Key_U: if (ctrl) win.move(-12); else fs.unzip(win.curEntry() ? win.curEntry().path : ""); break
+            case Qt.Key_T: fs.openTerminal(); break
+            case Qt.Key_Z: win.zipHovered(); break
             case Qt.Key_Left: case Qt.Key_Backspace: win.leaveDir(); break
             case Qt.Key_L: case Qt.Key_Right: case Qt.Key_Return: case Qt.Key_Enter: win.enterItem(); break
             case Qt.Key_H: case Qt.Key_Question: win.showHelp = true; break

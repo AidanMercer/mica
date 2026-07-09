@@ -20,6 +20,7 @@ Item {
                 [".", "toggle hidden"],
                 ["s", "cycle sort"],
                 ["R", "refresh"],
+                ["t", "terminal here"],
             ] },
         ],
         [
@@ -28,6 +29,8 @@ Item {
                 ["d", "delete"],
                 ["a", "create  (foo/ = dir)"],
                 ["r", "rename"],
+                ["z", "zip  (lone folder = its contents)"],
+                ["u", "unzip into a folder"],
             ] },
             { title: "quit", rows: [
                 ["q", "quit"],

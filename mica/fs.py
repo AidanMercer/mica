@@ -1,7 +1,9 @@
+import os
 import shutil
 import stat
 import subprocess
 import time
+import zipfile
 from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
@@ -16,6 +18,11 @@ _CODE = {"rs", "go", "py", "js", "ts", "jsx", "tsx", "c", "h", "cpp", "hpp", "ja
          "rb", "lua", "sh", "fish", "vim", "qml", "toml", "yaml", "yml", "json",
          "css", "html"}
 _DOC = {"pdf", "txt", "md", "doc", "docx", "odt", "epub"}
+
+# longest-first so ".tar.gz" wins over ".tar"; only formats shutil can unpack
+_ARCHIVE_SUFFIXES = (".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".zip", ".tar")
+_TERMINALS = ("kitty", "alacritty", "foot", "wezterm", "ghostty", "konsole",
+              "gnome-terminal", "xterm")
 
 
 def _kind(path: Path, is_dir: bool, is_link: bool, is_exec: bool) -> str:
@@ -96,6 +103,22 @@ def _entry(path: Path, marked: set) -> dict:
         "kind": _kind(path, is_dir, is_link, is_exec),
         "marked": str(path) in marked,
     }
+
+
+def _archive_stem(name: str):
+    low = name.lower()
+    for suf in _ARCHIVE_SUFFIXES:
+        if low.endswith(suf):
+            return name[: -len(suf)]
+    return None
+
+
+def _zip_tree(zf, base: Path, arc_prefix: Path):
+    for root, _dirs, files in os.walk(base):
+        root_p = Path(root)
+        rel = root_p.relative_to(base)
+        for f in files:
+            zf.write(root_p / f, str(arc_prefix / rel / f))
 
 
 def _dedupe(dst: Path) -> Path:
@@ -412,3 +435,90 @@ class Fs(QObject):
                              stderr=subprocess.DEVNULL)
         except OSError:
             self.notify.emit("no handler for that file", True)
+
+    @Slot()
+    def openTerminal(self):
+        term = os.environ.get("TERMINAL") or next(
+            (t for t in _TERMINALS if shutil.which(t)), None)
+        if not term:
+            self.notify.emit("no terminal found", True)
+            return
+        try:
+            subprocess.Popen([term], cwd=str(self._cwd), start_new_session=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        except OSError:
+            self.notify.emit("couldn't open a terminal", True)
+
+    # --- archives --------------------------------------------------------
+
+    @Slot(str, result=bool)
+    def zipShouldPrompt(self, hover):
+        return len(self._targets(hover)) > 1
+
+    @Slot(str, result=str)
+    def zipDefaultName(self, hover):
+        targets = self._targets(hover)
+        if len(targets) == 1:
+            p = Path(targets[0])
+            return p.name if p.is_dir() else (p.stem or p.name)
+        return "archive"
+
+    @Slot(str, str)
+    def zip(self, hover, name):
+        targets = [Path(t) for t in self._targets(hover)]
+        if not targets:
+            return
+        name = (name or "").strip() or "archive"
+        if not name.lower().endswith(".zip"):
+            name += ".zip"
+        dest = _dedupe(self._cwd / name)
+        try:
+            with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
+                if len(targets) == 1 and targets[0].is_dir():
+                    _zip_tree(zf, targets[0], Path())      # a lone folder -> its contents
+                else:
+                    for t in targets:
+                        if t.is_dir():
+                            _zip_tree(zf, t, Path(t.name))  # keep each folder's name
+                        elif t.exists():
+                            zf.write(t, t.name)
+        except OSError as e:
+            self.notify.emit(f"zip failed: {e.strerror or e}", True)
+            return
+        self._marked.clear()
+        self._remember[str(self._cwd)] = dest.name
+        self._rebuild()
+        self.notify.emit(f"zipped → {dest.name}", False)
+
+    @Slot(str)
+    def unzip(self, hover):
+        archives = [Path(t) for t in self._targets(hover)
+                    if Path(t).is_file() and _archive_stem(Path(t).name)]
+        if not archives:
+            self.notify.emit("not an archive", True)
+            return
+        done = failed = 0
+        last = None
+        for p in archives:
+            dest = _dedupe(self._cwd / _archive_stem(p.name))
+            try:
+                dest.mkdir(parents=True)
+                shutil.unpack_archive(str(p), str(dest))
+                done += 1
+                last = dest.name
+            except (OSError, shutil.ReadError, ValueError):
+                try:
+                    dest.rmdir()
+                except OSError:
+                    pass
+                failed += 1
+        if last:
+            self._remember[str(self._cwd)] = last
+        self._rebuild()
+        if done and not failed:
+            self.notify.emit(f"unzipped {done} archive(s)", False)
+        elif done:
+            self.notify.emit(f"unzipped {done}, {failed} failed", True)
+        else:
+            self.notify.emit("unzip failed", True)
