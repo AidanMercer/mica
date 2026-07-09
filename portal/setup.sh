@@ -24,6 +24,7 @@ if [ "${1:-}" = "--revert" ]; then
         sed -i '/^org\.freedesktop\.impl\.portal\.FileChooser=termfilechooser$/d' "$pc"
         echo "removed the mica FileChooser override from $pc"
     done
+    systemctl --user restart xdg-desktop-portal-termfilechooser.service 2>/dev/null || true
     systemctl --user restart xdg-desktop-portal.service 2>/dev/null || true
     echo "reverted — file dialogs fall back to your previous backend (gtk/kde)."
     exit 0
@@ -73,7 +74,9 @@ EOF
     echo "wrote $pc"
 done
 
-# 4. reload the portal so the new routing takes effect
+# 4. restart both services so the changes take effect — termfilechooser caches
+#    its own config (cmd/default_dir), so restarting only the frontend isn't enough
+systemctl --user restart xdg-desktop-portal-termfilechooser.service 2>/dev/null || true
 systemctl --user restart xdg-desktop-portal.service 2>/dev/null || true
 
 cat <<'EOF'
