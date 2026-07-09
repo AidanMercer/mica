@@ -220,10 +220,11 @@ class _IndexJob(QRunnable):
     """Walks the tree under `base` on a pool thread, streaming entries back in
     batches so find results appear as they're discovered instead of after the
     whole (capped) walk finishes."""
-    def __init__(self, base, show_hidden, signals):
+    def __init__(self, base, show_hidden, skip, signals):
         super().__init__()
         self._base = base
         self._show_hidden = show_hidden
+        self._skip = skip
         self._sig = signals
 
     def run(self):
@@ -231,8 +232,8 @@ class _IndexJob(QRunnable):
         batch = []
         total = 0
         for root, dirs, files in os.walk(base):
-            if not self._show_hidden:
-                dirs[:] = [d for d in dirs if not d.startswith(".")]
+            dirs[:] = [d for d in dirs if d not in self._skip
+                       and (self._show_hidden or not d.startswith("."))]
             root_p = Path(root)
             names = [n for n in dirs + files if self._show_hidden or not n.startswith(".")]
             for name in names:
@@ -304,17 +305,22 @@ class Fs(QObject):
     progress = Signal(int, int, str)  # done, total, verb — a "" verb clears it
     searchReady = Signal()      # the find index finished building
 
-    def __init__(self, start: Path, parent=None):
+    def __init__(self, start, cfg=None, parent=None):
         super().__init__(parent)
-        self._thumbs = Thumbnailer(self)
+        cfg = cfg or {}
+        self._thumbs = Thumbnailer(int(cfg.get("thumbnail_cache_mb", 200)), self)
         self._thumbs.ready.connect(self.thumbReady)
         self._busy = False
         self._op_sig = None
         self._idx_sig = None
         self._idx_gen = 0
         self._cwd = start
-        self._show_hidden = False
-        self._sort = "name"
+        self._show_hidden = bool(cfg.get("show_hidden", False))
+        sort = cfg.get("sort", "name")
+        self._sort = sort if sort in ("name", "size", "time") else "name"
+        self._find_skip = set(cfg.get("find_skip") or [])
+        self._terminal = str(cfg.get("terminal") or "")
+        self._bookmarks = cfg.get("bookmarks") or {}
         self._marked = set()
         self._clip = []
         self._clip_cut = False
@@ -331,6 +337,10 @@ class Fs(QObject):
     @Property(str, constant=True)
     def homePath(self):
         return str(Path.home())
+
+    @Property("QVariantMap", constant=True)
+    def bookmarks(self):
+        return self._bookmarks
 
     @Property(str, notify=dirChanged)
     def cwd(self):
@@ -447,6 +457,18 @@ class Fs(QObject):
         else:
             self.notify.emit("trash is empty", False)
 
+    @Slot(str, result=bool)
+    def gotoBookmark(self, key):
+        path = self._bookmarks.get(key)
+        if not path:
+            return False                     # not a bookmark; let the key fall through
+        p = Path(path).expanduser()
+        if p.is_dir():
+            self.setCwd(str(p))
+        else:
+            self.notify.emit(f"bookmark '{key}' → {path} isn't a dir", True)
+        return True
+
     @Slot(str)
     def jumpTo(self, path):
         p = Path(path)
@@ -528,7 +550,8 @@ class Fs(QObject):
         self._idx_sig = sig
         sig.chunk.connect(lambda batch: self._index_chunk(batch, gen))
         sig.done.connect(lambda: self._index_done(gen))
-        QThreadPool.globalInstance().start(_IndexJob(self._cwd, self._show_hidden, sig))
+        QThreadPool.globalInstance().start(
+            _IndexJob(self._cwd, self._show_hidden, self._find_skip, sig))
 
     def _index_chunk(self, batch, gen):
         if gen != self._idx_gen:
@@ -784,13 +807,16 @@ class Fs(QObject):
 
     @Slot()
     def openTerminal(self):
-        term = os.environ.get("TERMINAL") or next(
-            (t for t in _TERMINALS if shutil.which(t)), None)
-        if not term:
+        term = self._terminal or os.environ.get("TERMINAL", "")
+        cmd = term.split() if term else None
+        if cmd is None:
+            found = next((t for t in _TERMINALS if shutil.which(t)), None)
+            cmd = [found] if found else None
+        if not cmd:
             self.notify.emit("no terminal found", True)
             return
         try:
-            subprocess.Popen([term], cwd=str(self._cwd), start_new_session=True,
+            subprocess.Popen(cmd, cwd=str(self._cwd), start_new_session=True,
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)
         except OSError:

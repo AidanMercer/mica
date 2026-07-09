@@ -45,6 +45,14 @@ ApplicationWindow {
     // the middle column shows recursive search hits while finding, else this dir
     readonly property var viewEntries: mode === "search" ? searchResults : filteredEntries
 
+    // which-key hint shown after pressing g
+    readonly property string gHint: {
+        var parts = ["gg top", "gt trash", "gh home"]
+        var bm = fs.bookmarks
+        for (var k in bm) parts.push("g" + k + " " + bm[k])
+        return "jump —  " + parts.join("    ")
+    }
+
     function curEntry() { return viewEntries[cursor] || null }
 
     function refreshPreview() {
@@ -170,6 +178,8 @@ ApplicationWindow {
             if (wasG) {                                    // g-prefixed jumps
                 if (e.key === Qt.Key_G) { win.move(-win.viewEntries.length); return }  // gg -> top
                 if (e.key === Qt.Key_T) { fs.goTrash(); return }                       // gt -> trash
+                if (e.key === Qt.Key_H) { fs.goHome(); return }                        // gh -> home
+                if (e.text && fs.gotoBookmark(e.text)) return                          // g<key> bookmark
                 // any other key falls through and is handled normally
             }
 
@@ -293,10 +303,24 @@ ApplicationWindow {
 
             StatusBar {
                 anchors.fill: parent
-                visible: win.mode === "normal"
+                visible: win.mode === "normal" && !win.pendingG
                 entry: win.curEntry()
                 index: win.cursor
                 count: win.viewEntries.length
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: 6
+                anchors.rightMargin: 6
+                visible: win.pendingG
+                text: win.gHint
+                color: Theme.accent2
+                font.pixelSize: 12
+                font.family: Theme.font
+                elide: Text.ElideRight
             }
 
             RowLayout {

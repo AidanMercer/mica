@@ -53,12 +53,17 @@ def _qt_message_handler(mode, ctx, msg):
     print(f"[qml] {msg}{loc}", file=sys.stderr, flush=True)
 
 
-def _start_dir(argv):
+def _start_dir(argv, cfg):
     for arg in argv[1:]:
         if not arg.startswith("-"):
             p = Path(arg).expanduser()
             if p.is_dir():
                 return p.resolve()
+    start = cfg.get("start", "")
+    if start:
+        p = Path(start).expanduser()
+        if p.is_dir():
+            return p.resolve()
     return Path.home()
 
 
@@ -75,8 +80,11 @@ def main():
     app.setApplicationName("mica")
     app.setDesktopFileName("mica")  # becomes the Wayland app_id Hyprland matches
 
+    config.ensure()
+    cfg = config.load()
+
     theme = ThemeManager(app)
-    fs = Fs(_start_dir(sys.argv))
+    fs = Fs(_start_dir(sys.argv, cfg), cfg)
 
     def apply_font():
         app.setFont(QFont(theme.theme_dict()["font"]))

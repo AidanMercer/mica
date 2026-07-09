@@ -7,7 +7,6 @@ from PySide6.QtCore import QObject, QProcess, Signal
 
 from . import config
 
-_CACHE_LIMIT = 200 * 1024 * 1024   # evict oldest thumbnails past ~200 MB
 _MAX_JOBS = 3                       # concurrent render processes
 _MAX_QUEUE = 32                     # pending renders kept while scrolling fast
 
@@ -19,8 +18,9 @@ class Thumbnailer(QObject):
     keyed by path + mtime + size, so an edited file re-renders."""
     ready = Signal(str, str)
 
-    def __init__(self, parent=None):
+    def __init__(self, cache_mb=200, parent=None):
         super().__init__(parent)
+        self._limit = max(1, int(cache_mb)) * 1024 * 1024
         self._dir = config.CACHE_HOME / "thumbnails"
         self._dir.mkdir(parents=True, exist_ok=True)
         self._running = {}          # key -> QProcess
@@ -74,7 +74,7 @@ class Thumbnailer(QObject):
         self._running.pop(key, None)
         if out.exists() and out.stat().st_size > 0:
             self._bytes += out.stat().st_size
-            if self._bytes > _CACHE_LIMIT:
+            if self._bytes > self._limit:
                 self._bytes = self._evict()
             self.ready.emit(str(path), str(out))
         self._pump()
@@ -99,9 +99,9 @@ class Thumbnailer(QObject):
         except OSError:
             return 0
         total = sum(st.st_size for _, st in files)
-        if total <= _CACHE_LIMIT:
+        if total <= self._limit:
             return total
-        target = int(_CACHE_LIMIT * 0.8)   # low-water mark so we don't sweep every run
+        target = int(self._limit * 0.8)   # low-water mark so we don't sweep every run
         for p, st in sorted(files, key=lambda f: f[1].st_mtime):
             if total <= target:
                 break

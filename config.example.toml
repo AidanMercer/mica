@@ -1,0 +1,24 @@
+# mica config — everything here is optional; delete a line to use the default.
+# lives at ~/.config/mica/config.toml (mica writes this on first run).
+
+# where mica opens when launched with no path (default: your home dir)
+# start = "~/dev"
+
+show_hidden = false
+sort = "name"            # name | size | time
+
+# terminal for the `t` key (default: auto-detect kitty, foot, alacritty, …)
+# terminal = "kitty"
+
+# directories find (f) skips while walking the tree
+find_skip = [".git", "node_modules", ".cache", "__pycache__", ".venv"]
+
+# thumbnail cache cap, in MB
+thumbnail_cache_mb = 200
+
+# bookmarks — press g then the key to jump there.
+# gg = top, gt = trash and gh = home are built in.
+[bookmarks]
+d = "~/dev"
+D = "~/Downloads"
+c = "~/.config"

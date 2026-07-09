@@ -14,6 +14,7 @@ Item {
                 ["l  →  ⏎", "open / enter"],
                 ["~", "home"],
                 ["gt", "go to the trash"],
+                ["g + key", "jump to a bookmark"],
             ] },
             { title: "view", rows: [
                 ["space", "mark"],

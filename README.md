@@ -43,6 +43,23 @@ loaders and frostify use, and derives its palette from the `accent*` / `hue_*` /
 tokens. It watches `~/.cache/awww` and the theme's `config.toml`, so switching or editing a
 theme re-skins mica while it runs. `MICA_THEME=<name>` pins a theme for testing.
 
+## Config
+
+mica writes a commented `~/.config/mica/config.toml` on first run (there's a
+`config.example.toml` in the repo too). It's all optional — start dir, default
+sort, whether to show hidden files, the terminal for `t`, the dirs `f` skips, the
+thumbnail cache cap, and bookmarks:
+
+```toml
+[bookmarks]
+d = "~/dev"
+D = "~/Downloads"
+c = "~/.config"
+```
+
+Press `g` then the key to jump (`gg` top, `gt` trash, `gh` home are built in). A
+hint of the available jumps shows in the status bar the moment you press `g`.
+
 ## Keys
 
 | key | action | key | action |
