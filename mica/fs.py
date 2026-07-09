@@ -3,10 +3,13 @@ import shutil
 import stat
 import subprocess
 import time
+import urllib.parse
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Property, QObject, Signal, Slot
+from PySide6.QtCore import (Property, QObject, QRunnable, QThreadPool, Signal,
+                            Slot)
 
 from .thumbs import Thumbnailer
 
@@ -140,17 +143,61 @@ def _dedupe(dst: Path) -> Path:
         i += 1
 
 
+class _OpSignals(QObject):
+    progress = Signal(int, int, str)   # done, total, verb
+    done = Signal(object)              # result dict
+
+
+class _OpJob(QRunnable):
+    """Runs a file-op function on a pool thread and reports back through
+    _OpSignals, so a big copy/delete/zip never blocks the UI."""
+    def __init__(self, fn, signals):
+        super().__init__()
+        self._fn = fn
+        self._signals = signals
+
+    def run(self):
+        try:
+            res = self._fn(self._signals)
+        except Exception as e:      # surface any failure as a toast
+            res = {"error": str(e)}
+        self._signals.done.emit(res)
+
+
+def _trash(path: Path):
+    """Move a file into the XDG trash so a delete is recoverable. The .trashinfo
+    record is written before the move, per the freedesktop spec."""
+    data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+    files_dir = data_home / "Trash" / "files"
+    info_dir = data_home / "Trash" / "info"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    info_dir.mkdir(parents=True, exist_ok=True)
+    name = path.name
+    i = 1
+    while (files_dir / name).exists() or (info_dir / f"{name}.trashinfo").exists():
+        name = f"{path.name}.{i}"
+        i += 1
+    quoted = urllib.parse.quote(os.path.abspath(path), safe="/")
+    stamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    (info_dir / f"{name}.trashinfo").write_text(
+        f"[Trash Info]\nPath={quoted}\nDeletionDate={stamp}\n")
+    shutil.move(str(path), str(files_dir / name))
+
+
 class Fs(QObject):
     dirChanged = Signal()      # cwd / entries / parent changed
     flagsChanged = Signal()    # hidden or sort
     clipChanged = Signal()
     notify = Signal(str, bool)  # message, isError
     thumbReady = Signal(str, str)  # source path, thumbnail path
+    progress = Signal(int, int, str)  # done, total, verb — a "" verb clears it
 
     def __init__(self, start: Path, parent=None):
         super().__init__(parent)
         self._thumbs = Thumbnailer(self)
         self._thumbs.ready.connect(self.thumbReady)
+        self._busy = False
+        self._op_sig = None
         self._cwd = start
         self._show_hidden = False
         self._sort = "name"
@@ -349,6 +396,32 @@ class Fs(QObject):
     def _targets(self, hover):
         return list(self._marked) if self._marked else ([hover] if hover else [])
 
+    # --- background jobs -------------------------------------------------
+
+    def _run_op(self, job, finalize):
+        if self._busy:
+            self.notify.emit("busy — let the current job finish", True)
+            return
+        self._busy = True
+        sig = _OpSignals()
+        self._op_sig = sig                        # keep a ref until it finishes
+        sig.progress.connect(self._on_progress)
+        sig.done.connect(lambda res: self._finish_op(res, finalize))
+        QThreadPool.globalInstance().start(_OpJob(job, sig))
+
+    def _on_progress(self, done, total, verb):
+        self.progress.emit(done, total, verb)
+
+    def _finish_op(self, res, finalize):
+        self._busy = False
+        self._op_sig = None
+        self.progress.emit(0, 0, "")
+        if isinstance(res, dict) and res.get("error"):
+            self._rebuild()
+            self.notify.emit(f"failed: {res['error']}", True)
+        else:
+            finalize(res)
+
     # --- operations ------------------------------------------------------
 
     @Slot(str, bool)
@@ -366,50 +439,97 @@ class Fs(QObject):
         if not self._clip:
             self.notify.emit("nothing to paste", True)
             return
-        done = failed = 0
-        for src in self._clip:
-            src_path = Path(src)
-            dst = _dedupe(self._cwd / src_path.name)
-            try:
-                if self._clip_cut:
-                    shutil.move(src, str(dst))
-                elif src_path.is_dir():
-                    shutil.copytree(src, dst, symlinks=True)
-                else:
-                    shutil.copy2(src, dst, follow_symlinks=False)
-                done += 1
-            except OSError:
-                failed += 1
-        if self._clip_cut:
-            self._clip = []
-            self.clipChanged.emit()
-        self._marked.clear()
-        self._rebuild()
-        if failed:
-            self.notify.emit(f"pasted {done}, {failed} failed", True)
-        else:
-            self.notify.emit(f"pasted {done} item(s)", False)
+        sources = [Path(s) for s in self._clip]
+        cut = self._clip_cut
+        cwd = self._cwd
+        verb = "moving" if cut else "copying"
+        total = len(sources)
+
+        def job(sig):
+            ok = failed = 0
+            for i, src in enumerate(sources):
+                sig.progress.emit(i + 1, total, verb)
+                dst = _dedupe(cwd / src.name)
+                try:
+                    if cut:
+                        shutil.move(str(src), str(dst))
+                    elif src.is_dir():
+                        shutil.copytree(src, dst, symlinks=True)
+                    else:
+                        shutil.copy2(src, dst, follow_symlinks=False)
+                    ok += 1
+                except OSError:
+                    failed += 1
+            return {"ok": ok, "failed": failed, "cut": cut}
+
+        def finalize(res):
+            if res["cut"]:
+                self._clip = []
+                self.clipChanged.emit()
+            self._marked.clear()
+            self._rebuild()
+            self._report(res, "pasted")
+
+        self._run_op(job, finalize)
+
+    @Slot(str)
+    def trash(self, hover):
+        targets = [Path(t) for t in self._targets(hover)]
+        if not targets:
+            return
+        total = len(targets)
+
+        def job(sig):
+            ok = failed = 0
+            for i, p in enumerate(targets):
+                sig.progress.emit(i + 1, total, "trashing")
+                try:
+                    _trash(p)
+                    ok += 1
+                except OSError:
+                    failed += 1
+            return {"ok": ok, "failed": failed}
+
+        def finalize(res):
+            self._marked.clear()
+            self._rebuild()
+            self._report(res, "trashed")
+
+        self._run_op(job, finalize)
 
     @Slot(str)
     def remove(self, hover):
-        targets = self._targets(hover)
-        done = failed = 0
-        for path in targets:
-            p = Path(path)
-            try:
-                if p.is_dir() and not p.is_symlink():
-                    shutil.rmtree(p)
-                else:
-                    p.unlink()
-                done += 1
-            except OSError:
-                failed += 1
-        self._marked.clear()
-        self._rebuild()
-        if failed:
-            self.notify.emit(f"deleted {done}, {failed} failed", True)
+        targets = [Path(t) for t in self._targets(hover)]
+        if not targets:
+            return
+        total = len(targets)
+
+        def job(sig):
+            ok = failed = 0
+            for i, p in enumerate(targets):
+                sig.progress.emit(i + 1, total, "deleting")
+                try:
+                    if p.is_dir() and not p.is_symlink():
+                        shutil.rmtree(p)
+                    else:
+                        p.unlink()
+                    ok += 1
+                except OSError:
+                    failed += 1
+            return {"ok": ok, "failed": failed}
+
+        def finalize(res):
+            self._marked.clear()
+            self._rebuild()
+            self._report(res, "deleted")
+
+        self._run_op(job, finalize)
+
+    def _report(self, res, verb):
+        if res["failed"]:
+            self.notify.emit(f"{verb} {res['ok']}, {res['failed']} failed", True)
         else:
-            self.notify.emit(f"deleted {done} item(s)", False)
+            self.notify.emit(f"{verb} {res['ok']} item(s)", False)
 
     @Slot(str, str)
     def rename(self, path, new_name):
@@ -489,23 +609,30 @@ class Fs(QObject):
         if not name.lower().endswith(".zip"):
             name += ".zip"
         dest = _dedupe(self._cwd / name)
-        try:
+        lone_dir = len(targets) == 1 and targets[0].is_dir()
+        total = len(targets)
+
+        def job(sig):
             with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
-                if len(targets) == 1 and targets[0].is_dir():
-                    _zip_tree(zf, targets[0], Path())      # a lone folder -> its contents
+                if lone_dir:
+                    sig.progress.emit(1, 1, "zipping")
+                    _zip_tree(zf, targets[0], Path())       # a lone folder -> its contents
                 else:
-                    for t in targets:
+                    for i, t in enumerate(targets):
+                        sig.progress.emit(i + 1, total, "zipping")
                         if t.is_dir():
-                            _zip_tree(zf, t, Path(t.name))  # keep each folder's name
+                            _zip_tree(zf, t, Path(t.name))   # keep each folder's name
                         elif t.exists():
                             zf.write(t, t.name)
-        except OSError as e:
-            self.notify.emit(f"zip failed: {e.strerror or e}", True)
-            return
-        self._marked.clear()
-        self._remember[str(self._cwd)] = dest.name
-        self._rebuild()
-        self.notify.emit(f"zipped → {dest.name}", False)
+            return {"dest": dest.name}
+
+        def finalize(res):
+            self._marked.clear()
+            self._remember[str(self._cwd)] = res["dest"]
+            self._rebuild()
+            self.notify.emit(f"zipped → {res['dest']}", False)
+
+        self._run_op(job, finalize)
 
     @Slot(str)
     def unzip(self, hover):
@@ -514,27 +641,37 @@ class Fs(QObject):
         if not archives:
             self.notify.emit("not an archive", True)
             return
-        done = failed = 0
-        last = None
-        for p in archives:
-            dest = _dedupe(self._cwd / _archive_stem(p.name))
-            try:
-                dest.mkdir(parents=True)
-                shutil.unpack_archive(str(p), str(dest))
-                done += 1
-                last = dest.name
-            except (OSError, shutil.ReadError, ValueError):
+        cwd = self._cwd
+        total = len(archives)
+
+        def job(sig):
+            ok = failed = 0
+            last = None
+            for i, p in enumerate(archives):
+                sig.progress.emit(i + 1, total, "extracting")
+                dest = _dedupe(cwd / _archive_stem(p.name))
                 try:
-                    dest.rmdir()
-                except OSError:
-                    pass
-                failed += 1
-        if last:
-            self._remember[str(self._cwd)] = last
-        self._rebuild()
-        if done and not failed:
-            self.notify.emit(f"unzipped {done} archive(s)", False)
-        elif done:
-            self.notify.emit(f"unzipped {done}, {failed} failed", True)
-        else:
-            self.notify.emit("unzip failed", True)
+                    dest.mkdir(parents=True)
+                    shutil.unpack_archive(str(p), str(dest))
+                    ok += 1
+                    last = dest.name
+                except (OSError, shutil.ReadError, ValueError):
+                    try:
+                        dest.rmdir()
+                    except OSError:
+                        pass
+                    failed += 1
+            return {"ok": ok, "failed": failed, "last": last}
+
+        def finalize(res):
+            if res["last"]:
+                self._remember[str(self._cwd)] = res["last"]
+            self._rebuild()
+            if res["ok"] and not res["failed"]:
+                self.notify.emit(f"unzipped {res['ok']} archive(s)", False)
+            elif res["ok"]:
+                self.notify.emit(f"unzipped {res['ok']}, {res['failed']} failed", True)
+            else:
+                self.notify.emit("unzip failed", True)
+
+        self._run_op(job, finalize)

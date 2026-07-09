@@ -26,7 +26,8 @@ Item {
         [
             { title: "act on marked / hovered", rows: [
                 ["y  x  p", "copy / cut / paste"],
-                ["d", "delete"],
+                ["d", "trash  (recoverable)"],
+                ["D", "delete for good"],
                 ["a", "create  (foo/ = dir)"],
                 ["r", "rename"],
                 ["z", "zip  (lone folder = its contents)"],

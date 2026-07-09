@@ -8,6 +8,7 @@ Item {
 
     property string message: ""
     property bool messageError: false
+    property string progressText: ""
 
     Connections {
         target: fs
@@ -15,6 +16,9 @@ Item {
             root.message = text
             root.messageError = isError
             toastTimer.restart()
+        }
+        function onProgress(done, total, verb) {
+            root.progressText = total > 0 ? (verb + " " + done + "/" + total) : ""
         }
     }
     Timer { id: toastTimer; interval: 2600; onTriggered: root.message = "" }
@@ -29,8 +33,10 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         anchors.left: parent.left
         anchors.leftMargin: 6
-        text: root.message !== "" ? root.message : root.detail()
-        color: root.message !== "" ? (root.messageError ? Theme.image : Theme.accent) : Theme.subtext
+        text: root.progressText !== "" ? root.progressText
+            : (root.message !== "" ? root.message : root.detail())
+        color: root.progressText !== "" ? Theme.accent2
+            : (root.message !== "" ? (root.messageError ? Theme.image : Theme.accent) : Theme.subtext)
         font.pixelSize: 12
         font.family: Theme.font
         elide: Text.ElideRight

@@ -132,7 +132,11 @@ ApplicationWindow {
             switch (e.key) {
             case Qt.Key_J: case Qt.Key_Down: win.move(1); break
             case Qt.Key_K: case Qt.Key_Up: win.move(-1); break
-            case Qt.Key_D: if (ctrl) win.move(12); else if (win.curEntry()) win.mode = "confirm"; break
+            case Qt.Key_D:
+                if (ctrl) win.move(12)
+                else if (shift) { if (win.curEntry() || fs.markCount > 0) win.mode = "confirm" }
+                else fs.trash(win.curEntry() ? win.curEntry().path : "")
+                break
             case Qt.Key_U: if (ctrl) win.move(-12); else fs.unzip(win.curEntry() ? win.curEntry().path : ""); break
             case Qt.Key_T: fs.openTerminal(); break
             case Qt.Key_Z: win.zipHovered(); break
@@ -276,7 +280,7 @@ ApplicationWindow {
                 spacing: 8
                 visible: win.mode === "confirm"
                 Text {
-                    text: "delete " + (fs.markCount > 0 ? fs.markCount : 1) + " item(s)?"
+                    text: "permanently delete " + (fs.markCount > 0 ? fs.markCount : 1) + " item(s)?"
                     color: Theme.image
                     font.bold: true
                     font.pixelSize: 13
