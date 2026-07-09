@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QUrl, qInstallMessageHandler
-from PySide6.QtGui import QFont, QGuiApplication, QSurfaceFormat
+from PySide6.QtGui import QFont, QFontDatabase, QGuiApplication, QSurfaceFormat
 from PySide6.QtQml import QQmlApplicationEngine
 
 from . import config
@@ -53,6 +53,19 @@ def _qt_message_handler(mode, ctx, msg):
     print(f"[qml] {msg}{loc}", file=sys.stderr, flush=True)
 
 
+def _icon_font(cfg):
+    """A nerd font for file-type glyphs, or "" to fall back to no icons. Uses a
+    dedicated icon font rather than the theme font, so glyphs render even when
+    the theme's mono font isn't nerd-patched."""
+    if not cfg.get("icons", True):
+        return ""
+    families = QFontDatabase.families()
+    for pref in ("Symbols Nerd Font Mono", "Symbols Nerd Font"):
+        if pref in families:
+            return pref
+    return next((f for f in families if "Nerd Font" in f), "")
+
+
 def _start_dir(argv, cfg):
     for arg in argv[1:]:
         if not arg.startswith("-"):
@@ -95,6 +108,7 @@ def main():
     ctx.setContextProperty("Theme", theme.theme_dict())
     ctx.setContextProperty("Rice", theme)
     ctx.setContextProperty("fs", fs)
+    ctx.setContextProperty("iconFont", _icon_font(cfg))
 
     def retheme():
         ctx.setContextProperty("Theme", theme.theme_dict())

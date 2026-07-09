@@ -9,6 +9,14 @@ Item {
     signal clicked(int index)
     signal activated(int index)
 
+    // nerd-font glyphs per Fs kind; iconFont is "" when disabled or none found
+    readonly property bool showIcons: iconFont !== ""
+    readonly property var glyphs: ({
+        "dir": "", "link": "", "exec": "",
+        "image": "", "video": "", "audio": "",
+        "archive": "", "code": "", "doc": "", "file": ""
+    })
+
     onCursorChanged: if (active) lv.positionViewAtIndex(cursor, ListView.Contain)
 
     ListView {
@@ -65,8 +73,22 @@ Item {
             }
 
             Text {
+                id: icon
+                visible: root.showIcons
                 anchors.left: parent.left
-                anchors.leftMargin: 12
+                anchors.leftMargin: root.showIcons ? 10 : 12
+                anchors.verticalCenter: parent.verticalCenter
+                width: root.showIcons ? 20 : 0
+                horizontalAlignment: Text.AlignHCenter
+                text: root.glyphs[modelData.kind] || root.glyphs["file"]
+                color: picked ? Theme.selText : (Theme[modelData.kind] || Theme.text)
+                font.family: iconFont
+                font.pixelSize: 14
+            }
+
+            Text {
+                anchors.left: icon.right
+                anchors.leftMargin: root.showIcons ? 6 : 0
                 anchors.right: size.left
                 anchors.rightMargin: 6
                 anchors.verticalCenter: parent.verticalCenter

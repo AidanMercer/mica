@@ -13,6 +13,7 @@ _DEFAULTS = {
     "show_hidden": False,
     "sort": "name",
     "terminal": "",
+    "icons": True,
     "find_skip": [".git", "node_modules", ".cache", "__pycache__", ".venv"],
     "thumbnail_cache_mb": 200,
     "bookmarks": {},
@@ -27,6 +28,9 @@ _TEMPLATE = """\
 
 show_hidden = false
 sort = "name"            # name | size | time
+
+# nerd-font icons in the file list (needs a Nerd Font installed)
+icons = true
 
 # terminal for the `t` key (default: auto-detect kitty, foot, alacritty, …)
 # terminal = "kitty"

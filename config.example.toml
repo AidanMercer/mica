@@ -7,6 +7,9 @@
 show_hidden = false
 sort = "name"            # name | size | time
 
+# nerd-font icons in the file list (needs a Nerd Font installed)
+icons = true
+
 # terminal for the `t` key (default: auto-detect kitty, foot, alacritty, …)
 # terminal = "kitty"
 

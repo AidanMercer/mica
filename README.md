@@ -47,8 +47,9 @@ theme re-skins mica while it runs. `MICA_THEME=<name>` pins a theme for testing.
 
 mica writes a commented `~/.config/mica/config.toml` on first run (there's a
 `config.example.toml` in the repo too). It's all optional — start dir, default
-sort, whether to show hidden files, the terminal for `t`, the dirs `f` skips, the
-thumbnail cache cap, and bookmarks:
+sort, whether to show hidden files, nerd-font icons (needs a Nerd Font — mica
+uses the icon-only *Symbols Nerd Font* if present), the terminal for `t`, the
+dirs `f` skips, the thumbnail cache cap, and bookmarks:
 
 ```toml
 [bookmarks]
