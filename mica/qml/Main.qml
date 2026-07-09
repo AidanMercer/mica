@@ -172,9 +172,9 @@ ApplicationWindow {
     function beginOpenWith() {
         if (win.picking) return
         var e = curEntry()
-        if (!e || e.isDir) return
+        if (!e) return
         win.openWithFile = e.path
-        win.openWithName = e.name
+        win.openWithName = e.isDir ? e.name + "/" : e.name   // dirs work too (open in vscode etc.)
         win.openWithApps = fs.appsFor(e.path)
         win.showOpenWith = true
         openWith.open()
