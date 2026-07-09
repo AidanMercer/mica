@@ -11,14 +11,19 @@ tfc_dir="$cfg_home/xdg-desktop-portal-termfilechooser"
 xdp_dir="$cfg_home/xdg-desktop-portal"
 
 desktop="$(printf '%s' "${XDG_CURRENT_DESKTOP:-}" | cut -d: -f1 | tr '[:upper:]' '[:lower:]')"
-portals_conf="$xdp_dir/${desktop:+$desktop-}portals.conf"
+# Write both the desktop-specific conf AND the generic portals.conf. The portal's
+# systemd service often lacks XDG_CURRENT_DESKTOP, so it can only find the generic
+# one; the desktop-specific file covers sessions where it IS set.
+portals_confs=("$xdp_dir/portals.conf")
+[ -n "$desktop" ] && portals_confs+=("$xdp_dir/$desktop-portals.conf")
 
 if [ "${1:-}" = "--revert" ]; then
-    if [ -f "$portals_conf" ]; then
+    for pc in "${portals_confs[@]}"; do
+        [ -f "$pc" ] || continue
         # drop just our FileChooser override, leave the rest of the file intact
-        sed -i '/^org\.freedesktop\.impl\.portal\.FileChooser=termfilechooser$/d' "$portals_conf"
-        echo "removed the mica FileChooser override from $portals_conf"
-    fi
+        sed -i '/^org\.freedesktop\.impl\.portal\.FileChooser=termfilechooser$/d' "$pc"
+        echo "removed the mica FileChooser override from $pc"
+    done
     systemctl --user restart xdg-desktop-portal.service 2>/dev/null || true
     echo "reverted — file dialogs fall back to your previous backend (gtk/kde)."
     exit 0
@@ -27,7 +32,11 @@ fi
 chmod +x "$wrapper"
 
 # 1. the termfilechooser backend has to be installed (it provides the .portal)
-if ! ls /usr/{share,lib}/xdg-desktop-portal/portals/termfilechooser.portal >/dev/null 2>&1; then
+have_backend=""
+for d in /usr/share /usr/lib /usr/local/share /usr/local/lib; do
+    [ -f "$d/xdg-desktop-portal/portals/termfilechooser.portal" ] && have_backend=1
+done
+if [ -z "$have_backend" ]; then
     echo "!! xdg-desktop-portal-termfilechooser isn't installed."
     echo "   Arch:   paru -S xdg-desktop-portal-termfilechooser   (hunkyburrito fork)"
     echo "   others: https://github.com/hunkyburrito/xdg-desktop-portal-termfilechooser"
@@ -55,12 +64,14 @@ sys_conf="/usr/share/xdg-desktop-portal/${desktop:+$desktop-}portals.conf"
 [ -f "$sys_conf" ] || sys_conf="/usr/share/xdg-desktop-portal/portals.conf"
 default_line="$(grep -E '^default=' "$sys_conf" 2>/dev/null | head -1 || true)"
 [ -n "$default_line" ] || default_line="default=gtk"
-cat > "$portals_conf" <<EOF
+for pc in "${portals_confs[@]}"; do
+    cat > "$pc" <<EOF
 [preferred]
 $default_line
 org.freedesktop.impl.portal.FileChooser=termfilechooser
 EOF
-echo "wrote $portals_conf"
+    echo "wrote $pc"
+done
 
 # 4. reload the portal so the new routing takes effect
 systemctl --user restart xdg-desktop-portal.service 2>/dev/null || true

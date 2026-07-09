@@ -50,5 +50,20 @@ if [ -n "${MICA_PORTAL_DRYRUN:-}" ]; then
     exit 0
 fi
 
+# The portal's service spawns us without a working graphical env — sometimes with
+# no WAYLAND_DISPLAY, sometimes a stale one pointing at a dead socket. Qt then
+# crashes. Point it at a live compositor socket: the real one has a `.lock`.
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if [ -z "${WAYLAND_DISPLAY:-}" ] || [ ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]; then
+    for lock in "$XDG_RUNTIME_DIR"/wayland-*.lock; do
+        cand="${lock%.lock}"
+        if [ -S "$cand" ]; then
+            WAYLAND_DISPLAY="$(basename -- "$cand")"
+            export WAYLAND_DISPLAY
+            break
+        fi
+    done
+fi
+
 cd -- "$repo"
 exec "$py" -m mica "${args[@]}"
