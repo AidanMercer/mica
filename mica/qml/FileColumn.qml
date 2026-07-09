@@ -70,12 +70,13 @@ Item {
                 anchors.right: size.left
                 anchors.rightMargin: 6
                 anchors.verticalCenter: parent.verticalCenter
-                text: modelData.isDir ? modelData.name + "/" : modelData.name
+                text: (modelData.rel !== undefined ? modelData.rel : modelData.name)
+                    + (modelData.isDir ? "/" : "")
                 color: picked ? Theme.selText : (Theme[modelData.kind] || Theme.text)
                 font.pixelSize: 13
                 font.family: Theme.font
                 font.bold: modelData.isDir
-                elide: Text.ElideRight
+                elide: modelData.rel !== undefined ? Text.ElideMiddle : Text.ElideRight
             }
         }
     }

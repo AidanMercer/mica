@@ -14,11 +14,11 @@ ApplicationWindow {
 
     // QML owns the cursor within the current pane; fs owns cwd + listings.
     property int cursor: 0
-    property string mode: "normal"     // normal | rename | create | filter | confirm
+    property string mode: "normal"     // normal | rename | create | filter | search | confirm
     property string filter: ""
     property bool pendingG: false
     property bool showHelp: false
-    property bool showSearch: false
+    property var searchResults: []
     property string confirmKind: "trash"   // "trash" | "delete"
     property string zipHover: ""
     property var previewData: ({ "type": "empty" })
@@ -42,23 +42,33 @@ ApplicationWindow {
             return e.name.toLowerCase().indexOf(filter.toLowerCase()) !== -1
         })
 
-    function curEntry() { return filteredEntries[cursor] || null }
+    // the middle column shows recursive search hits while finding, else this dir
+    readonly property var viewEntries: mode === "search" ? searchResults : filteredEntries
+
+    function curEntry() { return viewEntries[cursor] || null }
 
     function refreshPreview() {
         var e = curEntry()
         win.previewData = fs.previewFor(e ? e.path : "")
     }
     function move(d) {
-        var n = filteredEntries.length
+        var n = viewEntries.length
         if (!n) return
         cursor = Math.max(0, Math.min(n - 1, cursor + d))
         var e = curEntry()
-        if (e) fs.remember(e.name)
+        if (e && mode !== "search") fs.remember(e.name)
         refreshPreview()
     }
     function enterItem() {
         var e = curEntry()
         if (!e) return
+        if (mode === "search") {          // a hit: reveal the file, or step into the folder
+            win.mode = "normal"
+            keys.forceActiveFocus()
+            if (e.isDir) fs.enter(e.path)
+            else fs.jumpTo(e.path)
+            return
+        }
         if (e.isDir) { win.filter = ""; fs.enter(e.path) }
         else fs.openPath(e.path)
     }
@@ -89,15 +99,29 @@ ApplicationWindow {
         else fs.zip(p, fs.zipDefaultName(p))
     }
 
-    function openSearch() { win.showSearch = true; search.open() }
-    function closeSearch() { win.showSearch = false; keys.forceActiveFocus() }
+    function beginSearch() {
+        fs.beginSearch()
+        win.searchResults = []
+        win.cursor = 0
+        win.mode = "search"
+        prompt.text = ""
+        prompt.forceActiveFocus()
+    }
+    function exitSearch() {
+        win.searchResults = []
+        win.mode = "normal"
+        win.cursor = 0
+        refreshPreview()
+        keys.forceActiveFocus()
+    }
 
     onFilterChanged: { cursor = 0; refreshPreview() }
 
     Connections {
         target: fs
         function onDirChanged() {
-            win.cursor = Math.min(fs.focusIndex, Math.max(0, win.filteredEntries.length - 1))
+            win.searchResults = []
+            win.cursor = Math.min(fs.focusIndex, Math.max(0, win.viewEntries.length - 1))
             win.refreshPreview()
         }
         function onThumbReady(src, thumb) {
@@ -139,8 +163,8 @@ ApplicationWindow {
             win.pendingG = false
 
             if (wasG) {                                    // g-prefixed jumps
-                if (e.key === Qt.Key_G) { win.move(-win.filteredEntries.length); return }  // gg -> top
-                if (e.key === Qt.Key_T) { fs.goTrash(); return }                           // gt -> trash
+                if (e.key === Qt.Key_G) { win.move(-win.viewEntries.length); return }  // gg -> top
+                if (e.key === Qt.Key_T) { fs.goTrash(); return }                       // gt -> trash
                 // any other key falls through and is handled normally
             }
 
@@ -161,15 +185,15 @@ ApplicationWindow {
             case Qt.Key_L: case Qt.Key_Right: case Qt.Key_Return: case Qt.Key_Enter: win.enterItem(); break
             case Qt.Key_H: case Qt.Key_Question: win.showHelp = true; break
             case Qt.Key_G:
-                if (shift) win.move(win.filteredEntries.length)   // G -> bottom
-                else win.pendingG = true                          // g -> await gg / gt
+                if (shift) win.move(win.viewEntries.length)   // G -> bottom
+                else win.pendingG = true                      // g -> await gg / gt
                 break
             case Qt.Key_Space:
                 var m = win.curEntry(); if (m) fs.toggleMark(m.path); win.move(1); break
             case Qt.Key_Period: fs.toggleHidden(); break
             case Qt.Key_S: fs.cycleSort(); break
             case Qt.Key_Slash: win.beginFilter(); break
-            case Qt.Key_F: win.openSearch(); break
+            case Qt.Key_F: win.beginSearch(); break
             case Qt.Key_A: win.beginCreate(); break
             case Qt.Key_R: if (shift) fs.refresh(); else win.beginRename(); break
             case Qt.Key_Y: fs.yank(win.curEntry() ? win.curEntry().path : "", false); break
@@ -239,7 +263,7 @@ ApplicationWindow {
                 id: current
                 width: panes.avail * 0.34
                 height: panes.height
-                model: win.filteredEntries
+                model: win.viewEntries
                 cursor: win.cursor
                 active: true
                 onClicked: function (i) {
@@ -267,7 +291,7 @@ ApplicationWindow {
                 visible: win.mode === "normal"
                 entry: win.curEntry()
                 index: win.cursor
-                count: win.filteredEntries.length
+                count: win.viewEntries.length
             }
 
             RowLayout {
@@ -276,21 +300,38 @@ ApplicationWindow {
                 visible: win.mode !== "normal" && win.mode !== "confirm"
                 spacing: 8
                 Text {
-                    text: win.mode
+                    text: win.mode === "search" ? "find" : win.mode
                     color: Theme.accent
                     font.pixelSize: 13
                     font.family: Theme.font
                 }
                 TextField {
                     id: prompt
+                    objectName: "prompt"
                     Layout.fillWidth: true
                     color: Theme.text
                     font.pixelSize: 13
                     font.family: Theme.font
                     background: Rectangle { color: "transparent" }
-                    onTextChanged: if (win.mode === "filter") win.filter = text
-                    onAccepted: if (win.mode === "filter") win.closePrompt(); else win.commitPrompt()
-                    Keys.onEscapePressed: { if (win.mode === "filter") win.filter = ""; win.closePrompt() }
+                    onTextChanged: {
+                        if (win.mode === "filter") win.filter = text
+                        else if (win.mode === "search") {
+                            win.searchResults = fs.search(text)
+                            win.cursor = 0
+                            win.refreshPreview()
+                        }
+                    }
+                    onAccepted: {
+                        if (win.mode === "filter") win.closePrompt()
+                        else if (win.mode === "search") win.enterItem()   // jump to the hit
+                        else win.commitPrompt()
+                    }
+                    Keys.onDownPressed: if (win.mode === "search") win.move(1)
+                    Keys.onUpPressed: if (win.mode === "search") win.move(-1)
+                    Keys.onEscapePressed: {
+                        if (win.mode === "search") win.exitSearch()
+                        else { if (win.mode === "filter") win.filter = ""; win.closePrompt() }
+                    }
                 }
             }
 
@@ -322,12 +363,5 @@ ApplicationWindow {
         anchors.fill: parent
         visible: win.showHelp
         onDismiss: win.showHelp = false
-    }
-
-    SearchOverlay {
-        anchors.fill: parent
-        visible: win.showSearch
-        onJump: function (path) { fs.jumpTo(path); win.closeSearch() }
-        onDismiss: win.closeSearch()
     }
 }
