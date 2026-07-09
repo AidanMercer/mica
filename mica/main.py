@@ -111,14 +111,16 @@ def main():
     QSurfaceFormat.setDefaultFormat(fmt)
     qInstallMessageHandler(_qt_message_handler)
 
+    pick = _parse_pick(sys.argv)
+
     app = QGuiApplication(sys.argv)
     app.setApplicationName("mica")
-    app.setDesktopFileName("mica")  # becomes the Wayland app_id Hyprland matches
+    # app_id is the Wayland class Hyprland matches. In pick mode use a distinct
+    # class so a window rule can float the picker without touching normal mica.
+    app.setDesktopFileName("mica-picker" if pick else "mica")
 
     config.ensure()
     cfg = config.load()
-
-    pick = _parse_pick(sys.argv)
 
     theme = ThemeManager(app)
     fs = Fs(_start_dir(sys.argv, cfg), cfg)
