@@ -6,7 +6,6 @@ this is what's left.
 
 ## small wins
 - [x] nerd-font icons per file type (uses Symbols Nerd Font, `icons` config toggle)
-- [ ] sort indicator + a way to reverse it — `s` cycles name/size/time, no direction yet
 - [ ] open-with menu — pick an app instead of always using xdg-open's default
 - [ ] bulk rename — dump the marked names into `$EDITOR`, apply the diff on save
 
