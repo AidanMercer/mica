@@ -17,8 +17,8 @@ Item {
             root.messageError = isError
             toastTimer.restart()
         }
-        function onProgress(done, total, verb) {
-            root.progressText = total > 0 ? (verb + " " + done + "/" + total) : ""
+        function onProgress(text) {
+            root.progressText = text
         }
     }
     Timer { id: toastTimer; interval: 2600; onTriggered: root.message = "" }

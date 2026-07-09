@@ -202,8 +202,51 @@ def _dedupe(dst: Path) -> Path:
         i += 1
 
 
+_CHUNK = 1024 * 1024   # 1 MiB copy buffer
+
+
+def _tree_size(path: Path) -> int:
+    if path.is_symlink():
+        return 0
+    try:
+        if path.is_file():
+            return path.stat().st_size
+    except OSError:
+        return 0
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += (Path(root) / f).stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def _copy_bytes(src: Path, dst: Path, on_bytes):
+    """Copy a file or tree, calling on_bytes(n) as bytes land — so a big copy can
+    report real progress. Same shape as shutil.copy2 / copytree(symlinks=True)."""
+    if src.is_symlink():
+        os.symlink(os.readlink(src), dst)
+        return
+    if src.is_dir():
+        dst.mkdir(parents=True, exist_ok=True)
+        for child in src.iterdir():
+            _copy_bytes(child, dst / child.name, on_bytes)
+        shutil.copystat(src, dst)
+        return
+    with open(src, "rb") as fi, open(dst, "wb") as fo:
+        while True:
+            chunk = fi.read(_CHUNK)
+            if not chunk:
+                break
+            fo.write(chunk)
+            on_bytes(len(chunk))
+    shutil.copystat(src, dst)
+
+
 class _OpSignals(QObject):
-    progress = Signal(int, int, str)   # done, total, verb
+    progress = Signal(str)             # status text, "" clears
     done = Signal(object)              # result dict
 
 
@@ -325,7 +368,7 @@ class Fs(QObject):
     clipChanged = Signal()
     notify = Signal(str, bool)  # message, isError
     thumbReady = Signal(str, str)  # source path, thumbnail path
-    progress = Signal(int, int, str)  # done, total, verb — a "" verb clears it
+    progress = Signal(str)      # status text while a job runs ("" clears it)
     searchReady = Signal()      # the find index finished building
     grepReady = Signal()        # content-search results grew or finished
     bookmarksChanged = Signal()
@@ -740,13 +783,13 @@ class Fs(QObject):
         sig.done.connect(lambda res: self._finish_op(res, finalize))
         QThreadPool.globalInstance().start(_OpJob(job, sig))
 
-    def _on_progress(self, done, total, verb):
-        self.progress.emit(done, total, verb)
+    def _on_progress(self, text):
+        self.progress.emit(text)
 
     def _finish_op(self, res, finalize):
         self._busy = False
         self._op_sig = None
-        self.progress.emit(0, 0, "")
+        self.progress.emit("")
         if isinstance(res, dict) and res.get("error"):
             self._rebuild()
             self.notify.emit(f"failed: {res['error']}", True)
@@ -773,24 +816,34 @@ class Fs(QObject):
         sources = [Path(s) for s in self._clip]
         cut = self._clip_cut
         cwd = self._cwd
-        verb = "moving" if cut else "copying"
         total = len(sources)
 
         def job(sig):
             ok = failed = 0
             moved, copied = [], []
+            total_bytes = 0
+            if not cut:
+                sig.progress.emit("copying …")
+                total_bytes = sum(_tree_size(s) for s in sources)
+            done, pct = [0], [-1]
+
+            def bump(n):                       # byte-level progress for copies
+                done[0] += n
+                p = int(done[0] * 100 / total_bytes) if total_bytes else 100
+                if p != pct[0]:
+                    pct[0] = p
+                    sig.progress.emit(f"copying {p}%  ·  "
+                                      f"{_human_size(done[0])} / {_human_size(total_bytes)}")
+
             for i, src in enumerate(sources):
-                sig.progress.emit(i + 1, total, verb)
                 dst = _dedupe(cwd / src.name)
                 try:
                     if cut:
+                        sig.progress.emit(f"moving {i + 1}/{total}")
                         shutil.move(str(src), str(dst))
                         moved.append((str(src), str(dst)))
-                    elif src.is_dir():
-                        shutil.copytree(src, dst, symlinks=True)
-                        copied.append((str(src), str(dst)))
                     else:
-                        shutil.copy2(src, dst, follow_symlinks=False)
+                        _copy_bytes(src, dst, bump)
                         copied.append((str(src), str(dst)))
                     ok += 1
                 except OSError:
@@ -823,7 +876,7 @@ class Fs(QObject):
             ok = failed = 0
             trashed = []
             for i, p in enumerate(targets):
-                sig.progress.emit(i + 1, total, "trashing")
+                sig.progress.emit(f"trashing {i + 1}/{total}")
                 try:
                     dest = _trash(p)
                     trashed.append((str(p), str(dest)))
@@ -851,7 +904,7 @@ class Fs(QObject):
         def job(sig):
             ok = failed = 0
             for i, p in enumerate(targets):
-                sig.progress.emit(i + 1, total, "deleting")
+                sig.progress.emit(f"deleting {i + 1}/{total}")
                 try:
                     if p.is_dir() and not p.is_symlink():
                         shutil.rmtree(p)
@@ -908,12 +961,12 @@ class Fs(QObject):
         state = [[o, d] for o, d in moved]      # [origin, current dst], flips each way
         def undo_job(sig):
             for i in range(len(state)):
-                sig.progress.emit(i + 1, len(state), "undoing")
+                sig.progress.emit(f"undoing {i + 1}/{len(state)}")
                 state[i][0] = str(_relocate(Path(state[i][1]), Path(state[i][0])))
             return {}
         def redo_job(sig):
             for i in range(len(state)):
-                sig.progress.emit(i + 1, len(state), "redoing")
+                sig.progress.emit(f"redoing {i + 1}/{len(state)}")
                 state[i][1] = str(_relocate(Path(state[i][0]), Path(state[i][1])))
             return {}
         return undo_job, redo_job
@@ -922,14 +975,14 @@ class Fs(QObject):
         state = [[s, d] for s, d in copied]     # [source, copy location]
         def undo_job(sig):
             for i in range(len(state)):
-                sig.progress.emit(i + 1, len(state), "undoing")
+                sig.progress.emit(f"undoing {i + 1}/{len(state)}")
                 dst = Path(state[i][1])
                 if dst.exists():
                     _trash(dst)
             return {}
         def redo_job(sig):
             for i in range(len(state)):
-                sig.progress.emit(i + 1, len(state), "redoing")
+                sig.progress.emit(f"redoing {i + 1}/{len(state)}")
                 src, dst = Path(state[i][0]), _dedupe(Path(state[i][1]))
                 if src.is_dir():
                     shutil.copytree(src, dst, symlinks=True)
@@ -943,7 +996,7 @@ class Fs(QObject):
         state = [[o, t] for o, t in trashed]    # [origin, trash path]
         def undo_job(sig):                      # restore
             for i in range(len(state)):
-                sig.progress.emit(i + 1, len(state), "undoing")
+                sig.progress.emit(f"undoing {i + 1}/{len(state)}")
                 tp = Path(state[i][1])
                 info = _trashinfo(tp)
                 state[i][0] = str(_relocate(tp, Path(state[i][0])))
@@ -952,7 +1005,7 @@ class Fs(QObject):
             return {}
         def redo_job(sig):                      # re-trash
             for i in range(len(state)):
-                sig.progress.emit(i + 1, len(state), "redoing")
+                sig.progress.emit(f"redoing {i + 1}/{len(state)}")
                 state[i][1] = str(_trash(Path(state[i][0])))
             return {}
         return undo_job, redo_job
@@ -988,7 +1041,7 @@ class Fs(QObject):
         def job(sig):
             ok = failed = 0
             for i, p in enumerate(items):
-                sig.progress.emit(i + 1, total, "restoring")
+                sig.progress.emit(f"restoring {i + 1}/{total}")
                 try:
                     _restore_one(p)
                     ok += 1
@@ -1103,11 +1156,11 @@ class Fs(QObject):
         def job(sig):
             with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
                 if lone_dir:
-                    sig.progress.emit(1, 1, "zipping")
+                    sig.progress.emit(f"zipping {1}/{1}")
                     _zip_tree(zf, targets[0], Path())       # a lone folder -> its contents
                 else:
                     for i, t in enumerate(targets):
-                        sig.progress.emit(i + 1, total, "zipping")
+                        sig.progress.emit(f"zipping {i + 1}/{total}")
                         if t.is_dir():
                             _zip_tree(zf, t, Path(t.name))   # keep each folder's name
                         elif t.exists():
@@ -1136,7 +1189,7 @@ class Fs(QObject):
             ok = failed = 0
             last = None
             for i, p in enumerate(archives):
-                sig.progress.emit(i + 1, total, "extracting")
+                sig.progress.emit(f"extracting {i + 1}/{total}")
                 dest = _dedupe(cwd / _archive_stem(p.name))
                 try:
                     dest.mkdir(parents=True)
