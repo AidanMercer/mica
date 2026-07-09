@@ -1,5 +1,6 @@
 # mica config — everything here is optional; delete a line to use the default.
 # lives at ~/.config/mica/config.toml (mica writes this on first run).
+# edits apply live, except start / sort / show_hidden (those are read at launch).
 
 # where mica opens when launched with no path (default: your home dir)
 # start = "~/dev"

@@ -16,9 +16,9 @@ this is what's left.
 - [ ] per-theme `mica.qml` chrome slot, like frostify's, so themes can restyle more than the palette
 
 ## rough edges
-- [ ] live config reload — settings (sort, find_skip, cache cap) only apply at launch
-- [ ] queue file ops instead of saying "busy" when one's already running
-- [ ] byte-level progress for a single big copy (only item-level today)
+- [x] live config reload — find_skip / terminal / cache / bookmarks apply on save
+- [x] queue file ops instead of saying "busy" when one's already running
+- [x] byte-level progress for a single big copy
 - [ ] a test suite — everything's been checked by hand so far
 - [ ] package it (PKGBUILD / AUR)
 - [ ] cross-filesystem trash lands in the home trash (off-spec, still recoverable)

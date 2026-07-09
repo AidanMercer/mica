@@ -406,6 +406,16 @@ class Fs(QObject):
         self._grep_results = []
         self._rebuild()
 
+    def applyConfig(self, cfg):
+        """Re-apply the settings that make sense to change live (called when the
+        config file is edited). show_hidden / sort / start stay launch-time so a
+        reload doesn't fight in-session toggles."""
+        self._find_skip = set(cfg.get("find_skip") or [])
+        self._terminal = str(cfg.get("terminal") or "")
+        self._thumbs.setLimit(int(cfg.get("thumbnail_cache_mb", 200)))
+        self._bookmarks = cfg.get("bookmarks") or {}
+        self.bookmarksChanged.emit()
+
     # --- exposed state ---------------------------------------------------
 
     @Property(str, constant=True)

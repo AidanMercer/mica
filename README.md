@@ -58,6 +58,9 @@ D = "~/Downloads"
 c = "~/.config"
 ```
 
+Edits to the config apply live (mica watches the file) — except `start`, `sort`
+and `show_hidden`, which are read at launch.
+
 Press `g` then the key to jump (`gg` top, `gt` trash, `gh` home are built in). A
 hint of the available jumps shows in the status bar the moment you press `g`.
 

@@ -30,6 +30,9 @@ class Thumbnailer(QObject):
         self._pdftoppm = shutil.which("pdftoppm")
         self._bytes = self._evict()
 
+    def setLimit(self, mb):
+        self._limit = max(1, int(mb)) * 1024 * 1024
+
     def get(self, path: Path, kind: str) -> str:
         """Cached thumbnail path, or "" while one is generated in the background."""
         try:

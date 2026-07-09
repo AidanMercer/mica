@@ -22,6 +22,7 @@ _DEFAULTS = {
 # written to ~/.config/mica/config.toml on first run so there's something to edit
 _TEMPLATE = """\
 # mica config — everything here is optional; delete a line to use the default.
+# edits apply live, except start / sort / show_hidden (those are read at launch).
 
 # where mica opens when launched with no path (default: your home dir)
 # start = "~/dev"

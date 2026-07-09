@@ -2,7 +2,7 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QUrl, qInstallMessageHandler
+from PySide6.QtCore import QFileSystemWatcher, QTimer, QUrl, qInstallMessageHandler
 from PySide6.QtGui import QFont, QFontDatabase, QGuiApplication, QSurfaceFormat
 from PySide6.QtQml import QQmlApplicationEngine
 
@@ -114,6 +114,26 @@ def main():
         ctx.setContextProperty("Theme", theme.theme_dict())
         apply_font()
     theme.themeChanged.connect(retheme)
+
+    # live config reload — watch the file (and its dir, since editors replace it)
+    watcher = QFileSystemWatcher(app)
+    debounce = QTimer(app)
+    debounce.setSingleShot(True)
+    debounce.setInterval(250)
+
+    def reload_config():
+        fresh = config.load()
+        fs.applyConfig(fresh)
+        ctx.setContextProperty("iconFont", _icon_font(fresh))
+        if config.CONFIG_FILE.exists() and str(config.CONFIG_FILE) not in watcher.files():
+            watcher.addPath(str(config.CONFIG_FILE))
+
+    debounce.timeout.connect(reload_config)
+    watcher.fileChanged.connect(lambda _p: debounce.start())
+    watcher.directoryChanged.connect(lambda _p: debounce.start())
+    watcher.addPath(str(config.CONFIG_DIR))
+    if config.CONFIG_FILE.exists():
+        watcher.addPath(str(config.CONFIG_FILE))
 
     engine.load(QUrl.fromLocalFile(str(Path(__file__).parent / "qml" / "Main.qml")))
     if not engine.rootObjects():
