@@ -187,6 +187,8 @@ ApplicationWindow {
     function tabNext()  { win.filter = ""; fs.nextTab(win.cursor) }
     function tabPrev()  { win.filter = ""; fs.prevTab(win.cursor) }
     function tabGo(i)   { win.filter = ""; fs.switchTab(i, win.cursor) }
+    // q / esc close the current tab, or the whole window on the last one
+    function quitOrCloseTab() { if (fs.tabCount > 1) win.tabClose(); else win.close() }
 
     function beginSearch() {
         win.searchResults = []
@@ -370,12 +372,12 @@ ApplicationWindow {
                 else fs.paste()
                 break
             case Qt.Key_QuoteLeft: fs.goHome(); break     // ~
-            case Qt.Key_Q: if (win.picking) picker.cancel(); else win.close(); break
+            case Qt.Key_Q: if (win.picking) picker.cancel(); else win.quitOrCloseTab(); break
             case Qt.Key_Escape:
                 if (win.filter !== "") win.filter = ""
                 else if (fs.markCount > 0) fs.clearMarks()
                 else if (win.picking) picker.cancel()
-                else win.close()
+                else win.quitOrCloseTab()
                 break
             }
         }
