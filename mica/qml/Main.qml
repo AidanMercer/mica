@@ -19,6 +19,7 @@ ApplicationWindow {
     property bool pendingG: false
     property bool showHelp: false
     property bool showSearch: false
+    property string confirmKind: "trash"   // "trash" | "delete"
     property string zipHover: ""
     property var previewData: ({ "type": "empty" })
 
@@ -124,7 +125,11 @@ ApplicationWindow {
         Keys.onPressed: function (e) {
             if (win.showHelp) { win.showHelp = false; return }
             if (win.mode === "confirm") {
-                if (e.key === Qt.Key_Y) fs.remove(win.curEntry() ? win.curEntry().path : "")
+                if (e.key === Qt.Key_Y) {
+                    var cp = win.curEntry() ? win.curEntry().path : ""
+                    if (win.confirmKind === "delete") fs.remove(cp)
+                    else fs.trash(cp)
+                }
                 win.mode = "normal"
                 return
             }
@@ -133,13 +138,21 @@ ApplicationWindow {
             var wasG = win.pendingG
             win.pendingG = false
 
+            if (wasG) {                                    // g-prefixed jumps
+                if (e.key === Qt.Key_G) { win.move(-win.filteredEntries.length); return }  // gg -> top
+                if (e.key === Qt.Key_T) { fs.goTrash(); return }                           // gt -> trash
+                // any other key falls through and is handled normally
+            }
+
             switch (e.key) {
             case Qt.Key_J: case Qt.Key_Down: win.move(1); break
             case Qt.Key_K: case Qt.Key_Up: win.move(-1); break
             case Qt.Key_D:
                 if (ctrl) win.move(12)
-                else if (shift) { if (win.curEntry() || fs.markCount > 0) win.mode = "confirm" }
-                else fs.trash(win.curEntry() ? win.curEntry().path : "")
+                else if (win.curEntry() || fs.markCount > 0) {
+                    win.confirmKind = shift ? "delete" : "trash"   // d = trash, D = for good
+                    win.mode = "confirm"
+                }
                 break
             case Qt.Key_U: if (ctrl) win.move(-12); else fs.unzip(win.curEntry() ? win.curEntry().path : ""); break
             case Qt.Key_T: fs.openTerminal(); break
@@ -148,9 +161,8 @@ ApplicationWindow {
             case Qt.Key_L: case Qt.Key_Right: case Qt.Key_Return: case Qt.Key_Enter: win.enterItem(); break
             case Qt.Key_H: case Qt.Key_Question: win.showHelp = true; break
             case Qt.Key_G:
-                if (shift) win.move(win.filteredEntries.length)
-                else if (wasG) win.move(-win.filteredEntries.length)
-                else win.pendingG = true
+                if (shift) win.move(win.filteredEntries.length)   // G -> bottom
+                else win.pendingG = true                          // g -> await gg / gt
                 break
             case Qt.Key_Space:
                 var m = win.curEntry(); if (m) fs.toggleMark(m.path); win.move(1); break
@@ -285,8 +297,9 @@ ApplicationWindow {
                 spacing: 8
                 visible: win.mode === "confirm"
                 Text {
-                    text: "permanently delete " + (fs.markCount > 0 ? fs.markCount : 1) + " item(s)?"
-                    color: Theme.image
+                    text: (win.confirmKind === "delete" ? "permanently delete " : "trash ")
+                        + (fs.markCount > 0 ? fs.markCount : 1) + " item(s)?"
+                    color: win.confirmKind === "delete" ? Theme.image : Theme.accent
                     font.bold: true
                     font.pixelSize: 13
                     font.family: Theme.font

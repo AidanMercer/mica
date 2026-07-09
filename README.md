@@ -54,7 +54,7 @@ theme re-skins mica while it runs. `MICA_THEME=<name>` pins a theme for testing.
 | `y` `x` `p` | yank / cut / paste | `d` `D` | trash / delete |
 | `a` | create (`foo/` makes a dir) | `r` | rename |
 | `z` `u` | zip / unzip into a folder | `t` | terminal here |
-| `~` | home | `q` / `esc` | quit |
+| `~` `gt` | home / go to trash | `q` / `esc` | quit |
 
 Press `h` or `?` in-app for the cheat sheet. Mouse works too — click to select,
 double-click to open. Files open with `xdg-open`.

@@ -371,6 +371,15 @@ class Fs(QObject):
     def goHome(self):
         self.setCwd(str(Path.home()))
 
+    @Slot()
+    def goTrash(self):
+        data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+        files = data_home / "Trash" / "files"
+        if files.is_dir():
+            self.setCwd(str(files))
+        else:
+            self.notify.emit("trash is empty", False)
+
     @Slot(str)
     def jumpTo(self, path):
         p = Path(path)

@@ -13,6 +13,7 @@ Item {
                 ["←  ⌫", "parent dir"],
                 ["l  →  ⏎", "open / enter"],
                 ["~", "home"],
+                ["gt", "go to the trash"],
             ] },
             { title: "view", rows: [
                 ["space", "mark"],
@@ -27,8 +28,8 @@ Item {
         [
             { title: "act on marked / hovered", rows: [
                 ["y  x  p", "copy / cut / paste"],
-                ["d", "trash  (recoverable)"],
-                ["D", "delete for good"],
+                ["d", "trash  (asks first)"],
+                ["D", "delete for good  (asks)"],
                 ["a", "create  (foo/ = dir)"],
                 ["r", "rename"],
                 ["z", "zip  (lone folder = its contents)"],
