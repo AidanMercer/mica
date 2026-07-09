@@ -380,6 +380,7 @@ class Fs(QObject):
         self._thumbs.ready.connect(self.thumbReady)
         self._busy = False
         self._op_sig = None
+        self._op_queue = []
         self._idx_sig = None
         self._idx_gen = 0
         self._cwd = start
@@ -774,8 +775,11 @@ class Fs(QObject):
 
     def _run_op(self, job, finalize):
         if self._busy:
-            self.notify.emit("busy — let the current job finish", True)
+            self._op_queue.append((job, finalize))   # line up behind the running one
             return
+        self._start_op(job, finalize)
+
+    def _start_op(self, job, finalize):
         self._busy = True
         sig = _OpSignals()
         self._op_sig = sig                        # keep a ref until it finishes
@@ -795,6 +799,8 @@ class Fs(QObject):
             self.notify.emit(f"failed: {res['error']}", True)
         else:
             finalize(res)
+        if self._op_queue:
+            self._start_op(*self._op_queue.pop(0))
 
     # --- operations ------------------------------------------------------
 
