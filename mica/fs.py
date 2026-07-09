@@ -9,8 +9,8 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import (Property, QObject, QRunnable, QThreadPool, Signal,
-                            Slot)
+from PySide6.QtCore import (Property, QObject, QProcess, QRunnable, QThreadPool,
+                            Signal, Slot)
 
 from . import config
 from .thumbs import Thumbnailer
@@ -327,6 +327,7 @@ class Fs(QObject):
     thumbReady = Signal(str, str)  # source path, thumbnail path
     progress = Signal(int, int, str)  # done, total, verb — a "" verb clears it
     searchReady = Signal()      # the find index finished building
+    grepReady = Signal()        # content-search results grew or finished
     bookmarksChanged = Signal()
 
     def __init__(self, start, cfg=None, parent=None):
@@ -356,6 +357,9 @@ class Fs(QObject):
         self._search_index = []
         self._undo_stack = []
         self._redo_stack = []
+        self._rg = None
+        self._grep_gen = 0
+        self._grep_results = []
         self._rebuild()
 
     # --- exposed state ---------------------------------------------------
@@ -639,6 +643,70 @@ class Fs(QObject):
                 if len(out) >= 500:
                     break
         return out
+
+    @Slot(result="QVariantList")
+    def grepResults(self):
+        return self._grep_results
+
+    @Slot(str)
+    def grep(self, query):
+        """Content search under cwd via ripgrep, streamed. Each new batch of
+        matching files bumps grepReady; QML reads grepResults()."""
+        self._grep_gen += 1
+        gen = self._grep_gen
+        if self._rg is not None:
+            self._rg.kill()
+            self._rg = None
+        self._grep_results = []
+        self.grepReady.emit()
+        query = query.strip()
+        if not query:
+            return
+        if not shutil.which("rg"):
+            self.notify.emit("ripgrep (rg) not installed", True)
+            return
+
+        base = self._cwd
+        proc = QProcess(self)
+        args = ["-l", "-F", "-i", "--no-messages", "--color", "never"]
+        if self._show_hidden:
+            args.append("--hidden")
+        args += ["--", query, str(base)]
+        tail = {"s": ""}
+
+        def on_out():
+            if gen != self._grep_gen:
+                return
+            tail["s"] += bytes(proc.readAllStandardOutput()).decode("utf-8", "replace")
+            lines = tail["s"].split("\n")
+            tail["s"] = lines.pop()          # keep the incomplete last line
+            grew = False
+            for line in lines:
+                if not line:
+                    continue
+                p = Path(line)
+                entry = _entry(p, self._marked)
+                try:
+                    entry["rel"] = str(p.relative_to(base))
+                except ValueError:
+                    entry["rel"] = entry["name"]
+                self._grep_results.append(entry)
+                grew = True
+                if len(self._grep_results) >= 500:
+                    proc.kill()
+                    break
+            if grew:
+                self.grepReady.emit()
+
+        proc.readyReadStandardOutput.connect(on_out)
+        proc.finished.connect(lambda *_: self._grep_done(gen))
+        self._rg = proc
+        proc.start("rg", args)
+
+    def _grep_done(self, gen):
+        if gen == self._grep_gen:
+            self._rg = None
+            self.grepReady.emit()
 
     # --- marks -----------------------------------------------------------
 

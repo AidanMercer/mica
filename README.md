@@ -71,7 +71,7 @@ the config. `g t h a r` are reserved as bookmark keys.
 | --- | --- | --- | --- |
 | `j` `k` | move | `←`/`⌫` `l` | parent / open |
 | `gg` `G` | top / bottom | `ctrl-d` `ctrl-u` | page |
-| `/` `f` | filter dir / find recursive | `.` | toggle hidden |
+| `/` `f` `F` | filter · find name · grep files | `.` | toggle hidden |
 | `space` | mark | `s` | cycle sort |
 | `y` `x` `p` | yank / cut / paste | `d` `D` | trash / delete |
 | `a` | create (`foo/` makes a dir) | `r` | rename |

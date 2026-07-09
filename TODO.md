@@ -11,9 +11,8 @@ this is what's left.
 
 ## bigger
 - [x] undo / redo — move, copy, trash, rename, create (ctrl-z / ctrl-shift-z)
-- [ ] extend undo to zip / unzip
+- [x] content search — grep inside files with ripgrep (F)
 - [ ] tabs or split panes
-- [ ] content search — `rg` inside files, not just filenames
 - [ ] per-theme `mica.qml` chrome slot, like frostify's, so themes can restyle more than the palette
 
 ## rough edges

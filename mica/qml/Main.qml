@@ -49,8 +49,9 @@ ApplicationWindow {
             return e.name.toLowerCase().indexOf(filter.toLowerCase()) !== -1
         })
 
-    // the middle column shows recursive search hits while finding, else this dir
-    readonly property var viewEntries: mode === "search" ? searchResults : filteredEntries
+    // the middle column shows recursive hits while finding (name or content), else this dir
+    readonly property bool finding: mode === "search" || mode === "grep"
+    readonly property var viewEntries: finding ? searchResults : filteredEntries
 
     // which-key hint shown after pressing g
     readonly property string gHint: {
@@ -77,7 +78,8 @@ ApplicationWindow {
     function enterItem() {
         var e = curEntry()
         if (!e) return
-        if (mode === "search") {          // a hit: reveal the file, or step into the folder
+        if (finding) {                    // a hit: reveal the file, or step into the folder
+            if (win.mode === "grep") fs.grep("")   // stop the rg process
             win.mode = "normal"
             keys.forceActiveFocus()
             if (e.isDir) fs.enter(e.path)
@@ -130,6 +132,22 @@ ApplicationWindow {
         keys.forceActiveFocus()
     }
 
+    function beginGrep() {
+        win.searchResults = []
+        win.cursor = 0
+        win.mode = "grep"
+        prompt.text = ""
+        prompt.forceActiveFocus()
+    }
+    function exitGrep() {
+        fs.grep("")            // stop rg + clear
+        win.searchResults = []
+        win.mode = "normal"
+        win.cursor = 0
+        refreshPreview()
+        keys.forceActiveFocus()
+    }
+
     function beginAddBookmark() {
         var e = curEntry()
         win.bookmarkTarget = (e && e.isDir) ? e.path : fs.cwd
@@ -173,6 +191,16 @@ ApplicationWindow {
             win.searchResults = fs.search(prompt.text)
             if (win.previewData.type === "empty") win.refreshPreview()
         }
+        function onGrepReady() {
+            if (win.mode !== "grep") return
+            win.searchResults = fs.grepResults()
+            if (win.previewData.type === "empty") win.refreshPreview()
+        }
+    }
+    Timer {
+        id: grepTimer            // debounce so we don't spawn rg on every keystroke
+        interval: 250
+        onTriggered: { win.cursor = 0; fs.grep(prompt.text) }
     }
     Component.onCompleted: { refreshPreview(); keys.forceActiveFocus() }
 
@@ -251,7 +279,7 @@ ApplicationWindow {
             case Qt.Key_Period: fs.toggleHidden(); break
             case Qt.Key_S: fs.cycleSort(); break
             case Qt.Key_Slash: win.beginFilter(); break
-            case Qt.Key_F: win.beginSearch(); break
+            case Qt.Key_F: if (shift) win.beginGrep(); else win.beginSearch(); break
             case Qt.Key_A: win.beginCreate(); break
             case Qt.Key_R: if (shift) fs.refresh(); else win.beginRename(); break
             case Qt.Key_Y:
@@ -373,7 +401,7 @@ ApplicationWindow {
                 anchors.fill: parent
                 anchors.leftMargin: 6
                 visible: win.mode === "rename" || win.mode === "create"
-                    || win.mode === "filter" || win.mode === "search"
+                    || win.mode === "filter" || win.mode === "search" || win.mode === "grep"
                 spacing: 8
                 Text {
                     text: win.mode === "search" ? "find" : win.mode
@@ -395,17 +423,18 @@ ApplicationWindow {
                             win.searchResults = fs.search(text)
                             win.cursor = 0
                             win.refreshPreview()
-                        }
+                        } else if (win.mode === "grep") grepTimer.restart()
                     }
                     onAccepted: {
                         if (win.mode === "filter") win.closePrompt()
-                        else if (win.mode === "search") win.enterItem()   // jump to the hit
+                        else if (win.finding) win.enterItem()   // jump to the hit
                         else win.commitPrompt()
                     }
-                    Keys.onDownPressed: if (win.mode === "search") win.move(1)
-                    Keys.onUpPressed: if (win.mode === "search") win.move(-1)
+                    Keys.onDownPressed: if (win.finding) win.move(1)
+                    Keys.onUpPressed: if (win.finding) win.move(-1)
                     Keys.onEscapePressed: {
                         if (win.mode === "search") win.exitSearch()
+                        else if (win.mode === "grep") win.exitGrep()
                         else { if (win.mode === "filter") win.filter = ""; win.closePrompt() }
                     }
                 }

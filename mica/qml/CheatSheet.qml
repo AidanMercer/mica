@@ -20,7 +20,8 @@ Item {
             { title: "view", rows: [
                 ["space", "mark"],
                 ["/", "filter this dir"],
-                ["f", "find (recursive)"],
+                ["f", "find by name (recursive)"],
+                ["F", "find in files (grep)"],
                 [".", "toggle hidden"],
                 ["s", "cycle sort"],
                 ["R", "refresh"],
