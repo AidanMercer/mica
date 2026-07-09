@@ -114,11 +114,16 @@ def _archive_stem(name: str):
 
 
 def _zip_tree(zf, base: Path, arc_prefix: Path):
-    for root, _dirs, files in os.walk(base):
+    for root, dirs, files in os.walk(base):
         root_p = Path(root)
         rel = root_p.relative_to(base)
         for f in files:
             zf.write(root_p / f, str(arc_prefix / rel / f))
+        # an empty dir has no files to imply it — store it explicitly or it's lost
+        if not files and not dirs:
+            entry = str(arc_prefix / rel)
+            if entry not in (".", ""):
+                zf.writestr(entry + "/", "")
 
 
 def _dedupe(dst: Path) -> Path:
