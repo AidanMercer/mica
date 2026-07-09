@@ -211,6 +211,47 @@ class _OpJob(QRunnable):
         self._signals.done.emit(res)
 
 
+class _IndexSignals(QObject):
+    chunk = Signal(object)   # a batch of (name, rel, abspath) tuples
+    done = Signal()
+
+
+class _IndexJob(QRunnable):
+    """Walks the tree under `base` on a pool thread, streaming entries back in
+    batches so find results appear as they're discovered instead of after the
+    whole (capped) walk finishes."""
+    def __init__(self, base, show_hidden, signals):
+        super().__init__()
+        self._base = base
+        self._show_hidden = show_hidden
+        self._sig = signals
+
+    def run(self):
+        base, sig = self._base, self._sig
+        batch = []
+        total = 0
+        for root, dirs, files in os.walk(base):
+            if not self._show_hidden:
+                dirs[:] = [d for d in dirs if not d.startswith(".")]
+            root_p = Path(root)
+            names = [n for n in dirs + files if self._show_hidden or not n.startswith(".")]
+            for name in names:
+                p = root_p / name
+                batch.append((name.lower(), str(p.relative_to(base)), str(p)))
+                total += 1
+                if len(batch) >= 2000:
+                    sig.chunk.emit(batch)
+                    batch = []
+                if total >= 50000:
+                    if batch:
+                        sig.chunk.emit(batch)
+                    sig.done.emit()
+                    return
+        if batch:
+            sig.chunk.emit(batch)
+        sig.done.emit()
+
+
 def _trash(path: Path):
     """Move a file into the XDG trash so a delete is recoverable. The .trashinfo
     record is written before the move, per the freedesktop spec."""
@@ -261,6 +302,7 @@ class Fs(QObject):
     notify = Signal(str, bool)  # message, isError
     thumbReady = Signal(str, str)  # source path, thumbnail path
     progress = Signal(int, int, str)  # done, total, verb — a "" verb clears it
+    searchReady = Signal()      # the find index finished building
 
     def __init__(self, start: Path, parent=None):
         super().__init__(parent)
@@ -268,6 +310,8 @@ class Fs(QObject):
         self._thumbs.ready.connect(self.thumbReady)
         self._busy = False
         self._op_sig = None
+        self._idx_sig = None
+        self._idx_gen = 0
         self._cwd = start
         self._show_hidden = False
         self._sort = "name"
@@ -474,26 +518,29 @@ class Fs(QObject):
 
     @Slot()
     def beginSearch(self):
-        """Index the tree under cwd once (capped), so keystrokes can filter it in
-        memory instead of re-walking the disk each time."""
-        base = self._cwd
-        index = []
-        scanned = 0
-        for root, dirs, files in os.walk(base):
-            if not self._show_hidden:
-                dirs[:] = [d for d in dirs if not d.startswith(".")]
-            root_p = Path(root)
-            names = [n for n in dirs + files if self._show_hidden or not n.startswith(".")]
-            for name in names:
-                scanned += 1
-                p = root_p / name
-                index.append((name.lower(), str(p.relative_to(base)), str(p)))
-                if len(index) >= 50000:
-                    self._search_index = index
-                    return
-            if scanned >= 50000:
-                break
-        self._search_index = index
+        """Kick off a background, streaming walk of the tree under cwd. Opening
+        find stays instant; searchReady fires as each batch lands so the first
+        hits show up right away and the rest fill in."""
+        self._search_index = []
+        self._idx_gen += 1
+        gen = self._idx_gen
+        sig = _IndexSignals()
+        self._idx_sig = sig
+        sig.chunk.connect(lambda batch: self._index_chunk(batch, gen))
+        sig.done.connect(lambda: self._index_done(gen))
+        QThreadPool.globalInstance().start(_IndexJob(self._cwd, self._show_hidden, sig))
+
+    def _index_chunk(self, batch, gen):
+        if gen != self._idx_gen:
+            return                          # a newer find superseded this walk
+        self._search_index.extend(batch)
+        self.searchReady.emit()
+
+    def _index_done(self, gen):
+        if gen != self._idx_gen:
+            return
+        self._idx_sig = None
+        self.searchReady.emit()
 
     @Slot(str, result="QVariantList")
     def search(self, query):

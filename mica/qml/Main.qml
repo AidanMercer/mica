@@ -100,12 +100,12 @@ ApplicationWindow {
     }
 
     function beginSearch() {
-        fs.beginSearch()
         win.searchResults = []
         win.cursor = 0
         win.mode = "search"
         prompt.text = ""
         prompt.forceActiveFocus()
+        fs.beginSearch()          // async + streaming; onSearchReady fills hits in
     }
     function exitSearch() {
         win.searchResults = []
@@ -127,6 +127,11 @@ ApplicationWindow {
         function onThumbReady(src, thumb) {
             var e = win.curEntry()
             if (e && e.path === src) win.refreshPreview()
+        }
+        function onSearchReady() {
+            if (win.mode !== "search") return
+            win.searchResults = fs.search(prompt.text)
+            if (win.previewData.type === "empty") win.refreshPreview()
         }
     }
     Component.onCompleted: { refreshPreview(); keys.forceActiveFocus() }
