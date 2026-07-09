@@ -231,6 +231,29 @@ def _trash(path: Path):
     shutil.move(str(path), str(files_dir / name))
 
 
+def _trashinfo(files_path: Path):
+    """The .trashinfo file that goes with a trashed item, or None."""
+    info = files_path.parent.parent / "info" / f"{files_path.name}.trashinfo"
+    return info if info.exists() else None
+
+
+def _restore_one(files_path: Path):
+    info = _trashinfo(files_path)
+    origin = None
+    if info is not None:
+        for line in info.read_text().splitlines():
+            if line.startswith("Path="):
+                origin = Path(urllib.parse.unquote(line[5:]))
+                break
+    if origin is None:
+        raise OSError("no trash record")
+    dest = _dedupe(origin)                    # don't clobber whatever's there now
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(files_path), str(dest))
+    info.unlink(missing_ok=True)
+    return dest
+
+
 class Fs(QObject):
     dirChanged = Signal()      # cwd / entries / parent changed
     flagsChanged = Signal()    # hidden or sort
@@ -640,6 +663,36 @@ class Fs(QObject):
             self.notify.emit(f"{verb} {res['ok']}, {res['failed']} failed", True)
         else:
             self.notify.emit(f"{verb} {res['ok']} item(s)", False)
+
+    @Slot(str, result=bool)
+    def canRestore(self, hover):
+        return any(_trashinfo(Path(t)) for t in self._targets(hover))
+
+    @Slot(str)
+    def restore(self, hover):
+        items = [Path(t) for t in self._targets(hover) if _trashinfo(Path(t))]
+        if not items:
+            self.notify.emit("nothing to restore", True)
+            return
+        total = len(items)
+
+        def job(sig):
+            ok = failed = 0
+            for i, p in enumerate(items):
+                sig.progress.emit(i + 1, total, "restoring")
+                try:
+                    _restore_one(p)
+                    ok += 1
+                except OSError:
+                    failed += 1
+            return {"ok": ok, "failed": failed}
+
+        def finalize(res):
+            self._marked.clear()
+            self._rebuild()
+            self._report(res, "restored")
+
+        self._run_op(job, finalize)
 
     @Slot(str, str)
     def rename(self, path, new_name):

@@ -174,7 +174,11 @@ ApplicationWindow {
             case Qt.Key_R: if (shift) fs.refresh(); else win.beginRename(); break
             case Qt.Key_Y: fs.yank(win.curEntry() ? win.curEntry().path : "", false); break
             case Qt.Key_X: fs.yank(win.curEntry() ? win.curEntry().path : "", true); break
-            case Qt.Key_P: fs.paste(); break
+            case Qt.Key_P:
+                if (fs.canRestore(win.curEntry() ? win.curEntry().path : ""))
+                    fs.restore(win.curEntry() ? win.curEntry().path : "")
+                else fs.paste()
+                break
             case Qt.Key_QuoteLeft: fs.goHome(); break     // ~
             case Qt.Key_Q: win.close(); break
             case Qt.Key_Escape:

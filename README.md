@@ -56,5 +56,6 @@ theme re-skins mica while it runs. `MICA_THEME=<name>` pins a theme for testing.
 | `z` `u` | zip / unzip into a folder | `t` | terminal here |
 | `~` `gt` | home / go to trash | `q` / `esc` | quit |
 
-Press `h` or `?` in-app for the cheat sheet. Mouse works too — click to select,
+Press `h` or `?` in-app for the cheat sheet. `gt` jumps to the trash, where `p`
+puts an item back where it came from. Mouse works too — click to select,
 double-click to open. Files open with `xdg-open`.

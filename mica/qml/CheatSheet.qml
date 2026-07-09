@@ -27,7 +27,8 @@ Item {
         ],
         [
             { title: "act on marked / hovered", rows: [
-                ["y  x  p", "copy / cut / paste"],
+                ["y  x", "copy / cut"],
+                ["p", "paste  ·  put back (in trash)"],
                 ["d", "trash  (asks first)"],
                 ["D", "delete for good  (asks)"],
                 ["a", "create  (foo/ = dir)"],
