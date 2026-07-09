@@ -9,8 +9,8 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import (Property, QObject, QProcess, QRunnable, QThreadPool,
-                            Signal, Slot)
+from PySide6.QtCore import (Property, QFileSystemWatcher, QObject, QProcess,
+                            QRunnable, QThreadPool, Signal, Slot)
 
 from . import config
 from .thumbs import Thumbnailer
@@ -47,6 +47,35 @@ def _tab_label(cwd: Path) -> str:
     if cwd == Path.home():
         return "~"
     return cwd.name or "/"
+
+
+# the clipboard is a file so it's shared across separate mica windows
+_CLIP_FILE = config.CACHE_HOME / "clipboard"
+
+
+def _write_clip(paths, cut):
+    try:
+        config.CACHE_HOME.mkdir(parents=True, exist_ok=True)
+        _CLIP_FILE.write_text(("cut" if cut else "copy") + "\n" + "\n".join(paths) + "\n")
+    except OSError:
+        pass
+
+
+def _read_clip():
+    try:
+        lines = _CLIP_FILE.read_text().splitlines()
+    except OSError:
+        return [], False
+    if not lines:
+        return [], False
+    return [ln for ln in lines[1:] if ln], lines[0].strip() == "cut"
+
+
+def _clear_clip():
+    try:
+        _CLIP_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _kind(path: Path, is_dir: bool, is_link: bool, is_exec: bool) -> str:
@@ -414,6 +443,18 @@ class Fs(QObject):
         self._forced_focus = None    # cursor to land on after _rebuild (tab switch)
         self._tabs = [{"cwd": self._cwd, "marked": self._marked, "cursor": 0}]
         self._tab = 0
+        # watch the shared clipboard file so every window shows the same clip state
+        self._clip_watcher = QFileSystemWatcher(self)
+        self._clip_watcher.fileChanged.connect(self._sync_clip)
+        self._clip_watcher.directoryChanged.connect(self._sync_clip)
+        try:
+            config.CACHE_HOME.mkdir(parents=True, exist_ok=True)
+            self._clip_watcher.addPath(str(config.CACHE_HOME))
+            if _CLIP_FILE.exists():
+                self._clip_watcher.addPath(str(_CLIP_FILE))
+        except OSError:
+            pass
+        self._sync_clip()
         self._rebuild()
 
     def applyConfig(self, cfg):
@@ -891,11 +932,18 @@ class Fs(QObject):
 
     # --- operations ------------------------------------------------------
 
+    def _sync_clip(self, *_):
+        self._clip, self._clip_cut = _read_clip()
+        if _CLIP_FILE.exists() and str(_CLIP_FILE) not in self._clip_watcher.files():
+            self._clip_watcher.addPath(str(_CLIP_FILE))
+        self.clipChanged.emit()
+
     @Slot(str, bool)
     def yank(self, hover, cut):
         targets = self._targets(hover)
         if not targets:
             return
+        _write_clip(targets, cut)          # shared across windows
         self._clip = targets
         self._clip_cut = cut
         self.clipChanged.emit()
@@ -903,11 +951,11 @@ class Fs(QObject):
 
     @Slot()
     def paste(self):
-        if not self._clip:
+        sources_raw, cut = _read_clip()    # read the shared clipboard fresh
+        if not sources_raw:
             self.notify.emit("nothing to paste", True)
             return
-        sources = [Path(s) for s in self._clip]
-        cut = self._clip_cut
+        sources = [Path(s) for s in sources_raw]
         cwd = self._cwd
         total = len(sources)
 
@@ -946,6 +994,7 @@ class Fs(QObject):
 
         def finalize(res):
             if res["cut"]:
+                _clear_clip()
                 self._clip = []
                 self.clipChanged.emit()
             self._marked.clear()
