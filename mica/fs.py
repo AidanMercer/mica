@@ -2,6 +2,7 @@ import os
 import shutil
 import stat
 import subprocess
+import tarfile
 import time
 import urllib.parse
 import zipfile
@@ -118,6 +119,52 @@ def _archive_stem(name: str):
     return None
 
 
+def _archive_listing(path: Path):
+    """Top-level entries inside a zip/tar, shaped like dir entries so the preview
+    pane can list them without extracting. None if it can't be read."""
+    raw = []
+    try:
+        if path.name.lower().endswith(".zip"):
+            with zipfile.ZipFile(path) as z:
+                for info in z.infolist()[:2000]:
+                    raw.append((info.filename, info.file_size, info.is_dir()))
+        else:
+            with tarfile.open(path) as t:
+                for member in t:
+                    raw.append((member.name, member.size, member.isdir()))
+                    if len(raw) >= 2000:
+                        break
+    except (OSError, tarfile.TarError, zipfile.BadZipFile, EOFError):
+        return None
+
+    top = {}
+    for name, size, is_dir in raw:
+        parts = name.strip("/").split("/")
+        if not parts or not parts[0]:
+            continue
+        entry = top.setdefault(parts[0], {"is_dir": False, "size": 0})
+        if len(parts) > 1 or is_dir:
+            entry["is_dir"] = True
+        else:
+            entry["size"] += size
+
+    entries = [{
+        "name": name,
+        "path": "",
+        "isDir": e["is_dir"],
+        "isLink": False,
+        "size": e["size"],
+        "sizeText": "" if e["is_dir"] else _human_size(e["size"]),
+        "mtimeText": "",
+        "perms": "",
+        "marked": False,
+        "kind": "dir" if e["is_dir"] else _kind(Path(name), False, False, False),
+    } for name, e in top.items()]
+    entries.sort(key=lambda x: x["name"].lower())
+    entries.sort(key=lambda x: not x["isDir"])
+    return entries
+
+
 def _zip_tree(zf, base: Path, arc_prefix: Path):
     for root, dirs, files in os.walk(base):
         root_p = Path(root)
@@ -209,6 +256,7 @@ class Fs(QObject):
         self._parent = []
         self._parent_index = 0
         self._focus_index = 0
+        self._search_index = []
         self._rebuild()
 
     # --- exposed state ---------------------------------------------------
@@ -323,6 +371,15 @@ class Fs(QObject):
     def goHome(self):
         self.setCwd(str(Path.home()))
 
+    @Slot(str)
+    def jumpTo(self, path):
+        p = Path(path)
+        parent = p.parent
+        if parent.is_dir():
+            self._remember[str(parent)] = p.name
+            self._cwd = parent
+            self._rebuild()
+
     @Slot()
     def refresh(self):
         self._rebuild()
@@ -357,6 +414,10 @@ class Fs(QObject):
             if thumb:
                 return {"type": "image", "path": thumb}
             # fall through to the info card while the thumbnail renders
+        if _archive_stem(p.name):
+            listing = _archive_listing(p)
+            if listing is not None:
+                return {"type": "dir", "entries": listing}
         try:
             st = p.stat()
         except OSError:
@@ -376,6 +437,46 @@ class Fs(QObject):
             ]}
         text = data.decode("utf-8", "replace")
         return {"type": "text", "text": "\n".join(text.splitlines()[:600])}
+
+    # --- search ----------------------------------------------------------
+
+    @Slot()
+    def beginSearch(self):
+        """Index the tree under cwd once (capped), so keystrokes can filter it in
+        memory instead of re-walking the disk each time."""
+        base = self._cwd
+        index = []
+        scanned = 0
+        for root, dirs, files in os.walk(base):
+            if not self._show_hidden:
+                dirs[:] = [d for d in dirs if not d.startswith(".")]
+            root_p = Path(root)
+            names = [n for n in dirs + files if self._show_hidden or not n.startswith(".")]
+            for name in names:
+                scanned += 1
+                p = root_p / name
+                index.append((name.lower(), str(p.relative_to(base)), str(p)))
+                if len(index) >= 50000:
+                    self._search_index = index
+                    return
+            if scanned >= 50000:
+                break
+        self._search_index = index
+
+    @Slot(str, result="QVariantList")
+    def search(self, query):
+        q = query.strip().lower()
+        if not q:
+            return []
+        out = []
+        for name_l, rel, path in self._search_index:
+            if q in name_l:
+                entry = _entry(Path(path), self._marked)
+                entry["rel"] = rel
+                out.append(entry)
+                if len(out) >= 500:
+                    break
+        return out
 
     # --- marks -----------------------------------------------------------
 

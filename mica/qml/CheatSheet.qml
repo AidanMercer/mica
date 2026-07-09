@@ -16,7 +16,8 @@ Item {
             ] },
             { title: "view", rows: [
                 ["space", "mark"],
-                ["/", "filter"],
+                ["/", "filter this dir"],
+                ["f", "find (recursive)"],
                 [".", "toggle hidden"],
                 ["s", "cycle sort"],
                 ["R", "refresh"],

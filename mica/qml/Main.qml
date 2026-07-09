@@ -18,6 +18,7 @@ ApplicationWindow {
     property string filter: ""
     property bool pendingG: false
     property bool showHelp: false
+    property bool showSearch: false
     property string zipHover: ""
     property var previewData: ({ "type": "empty" })
 
@@ -87,6 +88,9 @@ ApplicationWindow {
         else fs.zip(p, fs.zipDefaultName(p))
     }
 
+    function openSearch() { win.showSearch = true; search.open() }
+    function closeSearch() { win.showSearch = false; keys.forceActiveFocus() }
+
     onFilterChanged: { cursor = 0; refreshPreview() }
 
     Connections {
@@ -153,6 +157,7 @@ ApplicationWindow {
             case Qt.Key_Period: fs.toggleHidden(); break
             case Qt.Key_S: fs.cycleSort(); break
             case Qt.Key_Slash: win.beginFilter(); break
+            case Qt.Key_F: win.openSearch(); break
             case Qt.Key_A: win.beginCreate(); break
             case Qt.Key_R: if (shift) fs.refresh(); else win.beginRename(); break
             case Qt.Key_Y: fs.yank(win.curEntry() ? win.curEntry().path : "", false); break
@@ -300,5 +305,12 @@ ApplicationWindow {
         anchors.fill: parent
         visible: win.showHelp
         onDismiss: win.showHelp = false
+    }
+
+    SearchOverlay {
+        anchors.fill: parent
+        visible: win.showSearch
+        onJump: function (path) { fs.jumpTo(path); win.closeSearch() }
+        onDismiss: win.closeSearch()
     }
 }
