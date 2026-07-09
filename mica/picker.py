@@ -17,6 +17,7 @@ class Picker(QObject):
         self._directory = bool(opts.get("directory"))
         self._save = bool(opts.get("save"))
         self._name = opts.get("name", "")
+        self._resolved = False   # once we've written a result, cancel() must not clobber it
 
     @Property(bool, constant=True)
     def multiple(self):
@@ -47,6 +48,7 @@ class Picker(QObject):
         paths = [p for p in paths if p]
         if not paths:
             return
+        self._resolved = True
         self._write(paths)
         self._app.quit()
 
@@ -56,5 +58,9 @@ class Picker(QObject):
 
     @Slot()
     def cancel(self):
+        # window close (onClosing) also routes here — never clobber a real pick
+        if self._resolved:
+            return
+        self._resolved = True
         self._write([])
         self._app.quit()
