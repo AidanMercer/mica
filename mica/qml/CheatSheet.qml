@@ -26,6 +26,7 @@ Item {
                 ["s", "cycle sort"],
                 ["R", "refresh"],
                 ["t", "terminal here"],
+                ["o", "open with…"],
             ] },
         ],
         [

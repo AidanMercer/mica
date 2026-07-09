@@ -27,6 +27,11 @@ ApplicationWindow {
     property string pendingBookmark: ""    // key awaiting an unbookmark confirm
     property var previewData: ({ "type": "empty" })
 
+    property bool showOpenWith: false
+    property var openWithApps: []
+    property string openWithFile: ""
+    property string openWithName: ""
+
     // --- file-picker mode (mica --pick, driven by the desktop portal) -------
     // `picker` is a context property: a Picker object in pick mode, else null.
     readonly property bool picking: picker !== null
@@ -163,6 +168,18 @@ ApplicationWindow {
         if (fs.zipShouldPrompt(p)) { win.zipHover = p; beginZip(fs.zipDefaultName(p)) }
         else fs.zip(p, fs.zipDefaultName(p))
     }
+
+    function beginOpenWith() {
+        if (win.picking) return
+        var e = curEntry()
+        if (!e || e.isDir) return
+        win.openWithFile = e.path
+        win.openWithName = e.name
+        win.openWithApps = fs.appsFor(e.path)
+        win.showOpenWith = true
+        openWith.open()
+    }
+    function closeOpenWith() { win.showOpenWith = false; keys.forceActiveFocus() }
 
     function beginSearch() {
         win.searchResults = []
@@ -310,6 +327,7 @@ ApplicationWindow {
                 break
             case Qt.Key_U: if (ctrl) win.move(-12); else fs.unzip(win.curEntry() ? win.curEntry().path : ""); break
             case Qt.Key_T: fs.openTerminal(); break
+            case Qt.Key_O: win.beginOpenWith(); break
             case Qt.Key_Z:
                 if (ctrl && shift) fs.redo()
                 else if (ctrl) fs.undo()
@@ -553,5 +571,15 @@ ApplicationWindow {
         anchors.fill: parent
         visible: win.showHelp
         onDismiss: win.showHelp = false
+    }
+
+    OpenWith {
+        id: openWith
+        anchors.fill: parent
+        visible: win.showOpenWith
+        fileName: win.openWithName
+        apps: win.openWithApps
+        onLaunch: function (desktop) { fs.openWith(win.openWithFile, desktop); win.closeOpenWith() }
+        onDismiss: win.closeOpenWith()
     }
 }

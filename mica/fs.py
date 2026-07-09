@@ -1130,6 +1130,17 @@ class Fs(QObject):
         except OSError:
             self.notify.emit("no handler for that file", True)
 
+    @Slot(str, result="QVariantList")
+    def appsFor(self, path):
+        from . import apps
+        return apps.apps_for(path)
+
+    @Slot(str, str)
+    def openWith(self, path, desktop):
+        from . import apps
+        if not apps.launch(desktop, path):
+            self.notify.emit("couldn't launch that app", True)
+
     @Slot()
     def openTerminal(self):
         term = self._terminal or os.environ.get("TERMINAL", "")
