@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=mica
+Comment=A file manager that wears your system theme
+Exec=/home/aidan/dev/mica/mica.sh
+Icon=system-file-manager
+Terminal=false
+Categories=Utility;FileTools;System;
+StartupWMClass=mica
