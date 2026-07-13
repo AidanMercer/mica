@@ -59,7 +59,7 @@ Item {
 
     Rectangle {
         anchors.centerIn: parent
-        width: 680
+        width: body.implicitWidth + 40
         height: body.implicitHeight + 40
         radius: Theme.radius
         color: Theme.card
@@ -99,13 +99,11 @@ Item {
                     model: root.columns
                     Column {
                         required property var modelData
-                        width: 300
                         spacing: 16
                         Repeater {
                             model: parent.modelData
                             Column {
                                 required property var modelData
-                                width: 300
                                 spacing: 5
                                 Text {
                                     text: modelData.title
