@@ -104,3 +104,6 @@ path rather than opening it.
 Press `h` or `?` in-app for the cheat sheet. `gt` jumps to the trash, where `p`
 puts an item back where it came from. Mouse works too — click to select,
 double-click to open. Files open with `xdg-open`.
+
+Paste never overwrites: pasting `foo.txt` where one already exists lands as
+`foo_1.txt` (and so on). Undo with `ctrl-z` if that wasn't what you wanted.

@@ -34,7 +34,7 @@ Item {
         [
             { title: "act on marked / hovered", rows: [
                 ["y  x", "copy / cut"],
-                ["p", "paste  ·  put back (in trash)"],
+                ["p", "paste (never overwrites — collisions land as name_1)  ·  put back (in trash)"],
                 ["d", "trash  (asks first)"],
                 ["D", "delete for good  (asks)"],
                 ["a", "create  (foo/ = dir)"],
