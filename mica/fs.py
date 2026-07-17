@@ -1243,10 +1243,18 @@ class Fs(QObject):
         except OSError as e:
             self.notify.emit(f"create failed: {e.strerror or e}", True)
 
+    # extensions we'd rather hand to LibreOffice than whatever xdg-open picks
+    _LIBREOFFICE_EXTS = {".pptx", ".ppt", ".pps", ".ppsx", ".odp"}
+
     @Slot(str)
     def openPath(self, path):
+        soffice = shutil.which("libreoffice") or shutil.which("soffice")
+        if soffice and os.path.splitext(path)[1].lower() in self._LIBREOFFICE_EXTS:
+            cmd = [soffice, path]
+        else:
+            cmd = ["xdg-open", path]
         try:
-            subprocess.Popen(["xdg-open", path], start_new_session=True,
+            subprocess.Popen(cmd, start_new_session=True,
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)
         except OSError:
