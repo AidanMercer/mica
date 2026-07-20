@@ -368,6 +368,8 @@ ApplicationWindow {
             }
             if (win.mode === "bookmark_add") { win.finishAddBookmark(e); return }
             if (win.mode === "bookmark_remove") { win.finishRemoveBookmark(e); return }
+            if (e.key === Qt.Key_Shift || e.key === Qt.Key_Control
+                    || e.key === Qt.Key_Alt || e.key === Qt.Key_Meta) return  // bare modifiers must not eat pendingG
             var shift = e.modifiers & Qt.ShiftModifier
             var ctrl = e.modifiers & Qt.ControlModifier
             var wasG = win.pendingG
@@ -379,8 +381,8 @@ ApplicationWindow {
                 if (e.key === Qt.Key_H) { fs.goHome(); return }                        // gh -> home
                 if (e.key === Qt.Key_A) { win.beginAddBookmark(); return }              // ga -> add bookmark
                 if (e.key === Qt.Key_R) { win.beginRemoveBookmark(); return }           // gr -> remove bookmark
-                if (e.text && fs.gotoBookmark(e.text)) return                          // g<key> bookmark
-                // any other key falls through and is handled normally
+                if (e.text) { fs.gotoBookmark(e.text); return }                        // g<key> bookmark
+                return                                     // unmatched chord cancels, never runs the bare binding
             }
 
             switch (e.key) {
