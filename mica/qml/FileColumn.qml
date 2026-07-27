@@ -14,7 +14,9 @@ Item {
     readonly property var glyphs: ({
         "dir": "", "link": "", "exec": "",
         "image": "", "video": "", "audio": "",
-        "archive": "", "code": "", "doc": "", "file": ""
+        "archive": "", "code": "", "doc": "",
+        "word": "", "sheet": "", "slides": "", "pdf": "",
+        "file": ""
     })
 
     onCursorChanged: if (active) lv.positionViewAtIndex(cursor, ListView.Contain)

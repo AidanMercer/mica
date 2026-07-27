@@ -1,3 +1,4 @@
+import colorsys
 import json
 import os
 import re
@@ -44,6 +45,10 @@ _BASE = {
     "archive":   "#ffe0af68",
     "code":      "#ffc8ccd8",
     "doc":       "#ffc8ccd8",
+    "word":      "#ff6f9ef0",   # docx / odt
+    "sheet":     "#ff73daca",   # xlsx / ods / csv
+    "slides":    "#ffff9e64",   # pptx / odp
+    "pdf":       "#fff7768e",
     "file":      "#ffc8ccd8",
 
     "radius":   16,
@@ -80,6 +85,74 @@ def _rgba(hex_color, alpha="ff"):
     if len(h) == 3:
         return "#" + alpha + "".join(c * 2 for c in h)
     return None
+
+
+def _rgb(hex_color):
+    """(r, g, b) floats 0..1 from any color _rgba() accepts, else None."""
+    h = _rgba(hex_color)
+    if not h:
+        return None
+    return tuple(int(h[i:i + 2], 16) / 255 for i in (3, 5, 7))
+
+
+def _is_dark(bg, fg):
+    """Whether the theme reads as a dark one — bg luminance when there is a bg
+    token, otherwise inverted from the ink."""
+    for c, dark_when_low in ((bg, True), (fg, False)):
+        rgb = _rgb(c) if c else None
+        if rgb:
+            luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+            return luma < 0.45 if dark_when_low else luma > 0.55
+    return True
+
+
+def _hue_dist(a, b):
+    d = abs(a - b) % 1.0
+    return min(d, 1.0 - d)
+
+
+def _tones_in_use(theme, keys):
+    """(hue, lightness) of the kind inks already assigned. Near-greys are
+    skipped — `code` and `doc` ride the theme's fg, and there's no hue there to
+    stay clear of."""
+    out = []
+    for k in keys:
+        rgb = _rgb(theme.get(k))
+        if not rgb:
+            continue
+        h, l, s = colorsys.rgb_to_hls(*rgb)
+        if s > 0.12:
+            out.append((h, l))
+    return out
+
+
+def _ink(hue, ref, dark, taken=()):
+    """An opaque #aarrggbb at `hue` (0..1) wearing the reference color's own
+    saturation and lightness, so the office inks stay distinct from each other
+    while still sounding like the rest of the theme. Saturation gets a floor
+    (near-grey accents would make every office file look the same) and
+    lightness is clamped into the band that stays legible on the theme's glass.
+
+    The hue carries the meaning (documents blue, sheets green, slides orange,
+    pdf red), so a kind already sitting on that hue is dodged in *tone* rather
+    than hue — a themes whose code blue is also 215° gets a paler docx blue, not
+    an indigo one."""
+    rgb = _rgb(ref)
+    if not rgb:
+        return None
+    _, l, s = colorsys.rgb_to_hls(*rgb)
+    s = max(s, 0.45)
+    lo, hi = (0.55, 0.76) if dark else (0.32, 0.50)
+    l = min(max(l, lo), hi)
+    clash = [tl for th, tl in taken
+             if _hue_dist(hue, th) < 0.04 and abs(l - tl) < 0.13]
+    if clash:
+        tl = sum(clash) / len(clash)
+        step = 0.17 if tl <= (lo + hi) / 2 else -0.17
+        # widened band: still legible ink, just further from the neighbour
+        l = min(max(tl + step, lo - 0.07), hi + 0.09)
+    r, g, b = colorsys.hls_to_rgb(hue, l, s)
+    return "#ff%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
 
 
 def _focused_monitor():
@@ -184,6 +257,27 @@ def _build_theme(tokens):
         if c:
             for k in keys:
                 theme[k] = _rgba(c)
+
+    # office ink: canonical blue/green/orange/red hues wearing the theme's own
+    # saturation and lightness, so a docx, an xlsx and a pptx are told apart at
+    # a glance in every rice. A theme can pin any of them outright with
+    # ink_word / ink_sheet / ink_slides / ink_pdf in its config.toml.
+    ref = accent or accent2 or fg or txt
+    dark = _is_dark(bg or col("glass"), fg or txt)
+    taken = _tones_in_use(theme, ("dir", "link", "exec", "image", "video",
+                                  "audio", "archive", "code"))
+    for key, hue in (("word", 0.598),      # 215° blue
+                     ("sheet", 0.394),     # 142° green
+                     ("slides", 0.075),    # 27° orange
+                     ("pdf", 0.980)):      # 353° red
+        pinned = col("ink_" + key)
+        if pinned:
+            theme[key] = _rgba(pinned)
+        elif ref:
+            ink = _ink(hue, ref, dark, taken)
+            if ink:
+                theme[key] = ink
+                taken.extend(_tones_in_use(theme, (key,)))
 
     font = tokens.get("font_mono")
     if isinstance(font, str) and font:

@@ -24,7 +24,11 @@ _ARCHIVE = {"zip", "tar", "gz", "tgz", "xz", "bz2", "zst", "7z", "rar", "lz4"}
 _CODE = {"rs", "go", "py", "js", "ts", "jsx", "tsx", "c", "h", "cpp", "hpp", "java",
          "rb", "lua", "sh", "fish", "vim", "qml", "toml", "yaml", "yml", "json",
          "css", "html"}
-_DOC = {"pdf", "txt", "md", "doc", "docx", "odt", "epub"}
+_DOC = {"txt", "md", "rst", "org", "tex", "log", "epub"}
+# office suites get their own kinds so a spreadsheet doesn't read like a memo
+_WORD = {"doc", "docx", "odt", "rtf", "pages"}
+_SHEET = {"xls", "xlsx", "xlsm", "ods", "csv", "tsv", "numbers"}
+_SLIDES = {"ppt", "pptx", "pps", "ppsx", "odp", "key"}
 
 # longest-first so ".tar.gz" wins over ".tar"; only formats shutil can unpack
 _ARCHIVE_SUFFIXES = (".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".zip", ".tar")
@@ -94,6 +98,14 @@ def _kind(path: Path, is_dir: bool, is_link: bool, is_exec: bool) -> str:
         return "archive"
     if ext in _CODE:
         return "code"
+    if ext == "pdf":
+        return "pdf"
+    if ext in _WORD:
+        return "word"
+    if ext in _SHEET:
+        return "sheet"
+    if ext in _SLIDES:
+        return "slides"
     if ext in _DOC:
         return "doc"
     return "exec" if is_exec else "file"
@@ -738,9 +750,8 @@ class Fs(QObject):
         kind = _kind(p, False, p.is_symlink(), False)
         if kind == "image":
             return {"type": "image", "path": str(p)}
-        ext = p.suffix.lower()
-        if kind in ("video", "audio") or ext == ".pdf":
-            thumb = self._thumbs.get(p, "pdf" if ext == ".pdf" else kind)
+        if kind in ("video", "audio", "pdf"):
+            thumb = self._thumbs.get(p, kind)
             if thumb:
                 return {"type": "image", "path": thumb}
             # fall through to the info card while the thumbnail renders
