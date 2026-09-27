@@ -1,3 +1,4 @@
+import functools
 import os
 import shutil
 import stat
@@ -181,6 +182,17 @@ def _archive_stem(name: str):
 def _archive_listing(path: Path):
     """Top-level entries inside a zip/tar, shaped like dir entries so the preview
     pane can list them without extracting. None if it can't be read."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return _archive_listing_cached(str(path), st.st_size, st.st_mtime_ns)
+
+
+@functools.lru_cache(maxsize=64)
+def _archive_listing_cached(path, _size, _mtime):
+    # size+mtime are only in the key, so a rewritten archive gets re-read
+    path = Path(path)
     raw = []
     try:
         if path.name.lower().endswith(".zip"):
@@ -766,7 +778,8 @@ class Fs(QObject):
         if st.st_size == 0:
             return {"type": "info", "fields": [["size", "empty file"]]}
         try:
-            data = p.read_bytes()[:_PREVIEW_BYTES]
+            with p.open("rb") as f:
+                data = f.read(_PREVIEW_BYTES)
         except OSError:
             data = b""
         if b"\0" in data[:8192] or kind in ("video", "audio", "archive"):
