@@ -37,6 +37,7 @@ ApplicationWindow {
     property var openWithApps: []
     property string openWithFile: ""
     property string openWithName: ""
+    property bool showDrives: false
 
     // --- file-picker mode (mica --pick, driven by the desktop portal) -------
     // `picker` is a context property: a Picker object in pick mode, else null.
@@ -186,6 +187,9 @@ ApplicationWindow {
         openWith.open()
     }
     function closeOpenWith() { win.showOpenWith = false; keys.forceActiveFocus() }
+
+    function beginDrives() { win.filter = ""; win.showDrives = true; drivesPanel.open() }
+    function closeDrives() { win.showDrives = false; keys.forceActiveFocus() }
 
     // tabs — clear the filter across a switch so the new tab shows its dir plainly
     function tabNew()   { win.filter = ""; fs.newTab(win.cursor) }
@@ -398,6 +402,7 @@ ApplicationWindow {
             case Qt.Key_U: if (ctrl) win.move(-12); else fs.unzip(win.curEntry() ? win.curEntry().path : ""); break
             case Qt.Key_T: if (ctrl) win.tabNew(); else fs.openTerminal(); break
             case Qt.Key_O: win.beginOpenWith(); break
+            case Qt.Key_M: win.beginDrives(); break
             case Qt.Key_Z:
                 if (ctrl && shift) fs.redo()
                 else if (ctrl) fs.undo()
@@ -673,5 +678,15 @@ ApplicationWindow {
         apps: win.openWithApps
         onLaunch: function (desktop) { fs.openWith(win.openWithFile, desktop); win.closeOpenWith() }
         onDismiss: win.closeOpenWith()
+    }
+
+    Drives {
+        id: drivesPanel
+        anchors.fill: parent
+        visible: win.showDrives
+        drives: fs.drives
+        onLaunch: function (dev) { fs.openDrive(dev); win.closeDrives() }
+        onEject: function (dev) { fs.ejectDrive(dev) }
+        onDismiss: win.closeDrives()
     }
 }

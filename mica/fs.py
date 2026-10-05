@@ -14,6 +14,7 @@ from PySide6.QtCore import (Property, QFileSystemWatcher, QObject, QProcess,
                             QRunnable, QThreadPool, Signal, Slot)
 
 from . import config
+from .drives import Drives
 from .thumbs import Thumbnailer
 
 _PREVIEW_BYTES = 64 * 1024
@@ -432,6 +433,7 @@ class Fs(QObject):
     grepReady = Signal()        # content-search results grew or finished
     bookmarksChanged = Signal()
     tabsChanged = Signal()      # a tab was added / closed / switched
+    drivesChanged = Signal()    # a usb stick / external drive came, went, mounted
 
     def __init__(self, start, cfg=None, parent=None):
         super().__init__(parent)
@@ -479,6 +481,11 @@ class Fs(QObject):
         except OSError:
             pass
         self._sync_clip()
+        self._drives = Drives(self)
+        self._drives.changed.connect(self._on_drives)
+        self._drives.plugged.connect(lambda name: self.notify.emit(f"{name} plugged in — m for drives", False))
+        self._drives.mounted.connect(lambda _dev, mount: self.setCwd(mount))
+        self._drives.message.connect(self.notify)
         self._rebuild()
 
     def applyConfig(self, cfg):
@@ -749,6 +756,43 @@ class Fs(QObject):
         self._sort = {"name": "size", "size": "time", "time": "name"}[self._sort]
         self.flagsChanged.emit()
         self._rebuild()
+
+    # --- drives ------------------------------------------------------------
+
+    @Property("QVariantList", notify=drivesChanged)
+    def drives(self):
+        return self._drives.all()
+
+    def _on_drives(self):
+        # a stick pulled without ejecting leaves cwd dangling — climb to what's left
+        if not self._cwd.is_dir():
+            p = self._cwd
+            while not p.is_dir() and p != p.parent:
+                p = p.parent
+            self._cwd = p
+            self._rebuild()
+        self.drivesChanged.emit()
+
+    @Slot(str)
+    def openDrive(self, dev):
+        self._drives.mount(dev)          # cds in once it's mounted
+
+    @Slot(str)
+    def ejectDrive(self, dev):
+        d = self._drives.find(dev)
+        if not d:
+            return
+        # step every tab off the drive first, or the unmount is just "target busy"
+        if d["mount"]:
+            home = Path.home()
+            for t in self._tabs:
+                if self._drives.owning(t["cwd"]) is d:
+                    t["cwd"] = home
+            if self._drives.owning(self._cwd) is d:
+                self._cwd = home
+                self._rebuild()
+                self.tabsChanged.emit()
+        self._drives.eject(dev)
 
     # --- preview ---------------------------------------------------------
 

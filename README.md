@@ -99,11 +99,17 @@ path rather than opening it.
 | `a` | create (`foo/` makes a dir) | `r` | rename |
 | `z` `u` | zip / unzip into a folder | `t` | terminal here |
 | `ctrl-z` | undo | `ctrl-⇧-z` `ctrl-y` | redo |
-| `~` `gt` | home / go to trash | `q` / `esc` | quit |
+| `~` `gt` | home / go to trash | `m` | drives (usb sticks, external disks) |
+| `q` / `esc` | quit | | |
 
 Press `h` or `?` in-app for the cheat sheet. `gt` jumps to the trash, where `p`
 puts an item back where it came from. Mouse works too — click to select,
 double-click to open. Files open with `xdg-open`.
+
+`m` lists plugged-in drives — usb sticks, sd cards, external disks. Enter mounts one
+(through `udisksctl`, no sudo) and opens it; `e` unmounts it and powers it off so it's safe
+to pull. The list follows hotplug live, and mica says so in the status bar when something
+gets plugged in.
 
 Paste never overwrites: pasting `foo.txt` where one already exists lands as
 `foo_1.txt` (and so on). Undo with `ctrl-z` if that wasn't what you wanted.

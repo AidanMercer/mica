@@ -14,6 +14,7 @@ Item {
                 ["l  →  ⏎", "open / enter"],
                 ["~", "home"],
                 ["gt", "go to the trash"],
+                ["m", "drives  (enter mounts · e ejects)"],
                 ["g + key", "jump to a bookmark"],
                 ["ga  gr", "add / remove a bookmark"],
             ] },

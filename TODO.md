@@ -13,6 +13,7 @@ this is what's left.
 - [x] content search — grep inside files with ripgrep (F)
 - [x] system file picker — `mica --pick` + xdg-desktop-portal wrapper, so apps
       open mica to choose files (see `portal/`)
+- [x] drives — `m` lists usb sticks / external disks, mounts + ejects via udisksctl
 - [x] tabs — ctrl-t / ctrl-w / tab, per-tab cwd + cursor + marks (shared clipboard)
 - [x] per-theme `mica.qml` chrome slot, like frostify's, so themes can restyle
       more than the palette — pal/host injection, masked backdrop/overlay
